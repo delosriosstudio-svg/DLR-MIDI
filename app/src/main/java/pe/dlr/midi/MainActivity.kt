@@ -26,6 +26,7 @@ class MainActivity : Activity() {
 
     private lateinit var prefs: SharedPreferences
     private lateinit var midi: Midi
+    private lateinit var interp: Interprete
     private lateinit var estado: Estado
     private lateinit var contenido: FrameLayout
     private lateinit var pagTeclado: View
@@ -54,6 +55,9 @@ class MainActivity : Activity() {
         estado = Estado(this)
         midi = Midi(this) { texto, ok -> estado.fijar(texto, ok) }
         midi.canal = prefs.getInt("canal", 1)
+        interp = Interprete(midi)
+        interp.velBase = prefs.getInt("velBase", 100)
+        interp.humanize = prefs.getInt("humanize", 0) / 100f
 
         val raiz = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -65,8 +69,15 @@ class MainActivity : Activity() {
         btnCanal = Boton(this, "") { elegirCanal() }.apply { tamTexto = 24f }
         tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 24f }
         tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
-        barra.addView(estado, LinearLayout.LayoutParams(0, dp(34), 2f))
+        val vel = Valor(this, "VEL", 1, 127, 100, { "$it" }) { interp.velBase = it; prefs.edit().putInt("velBase", it).apply() }
+        vel.valor = interp.velBase
+        val hum = Valor(this, "HUMANIZE", 0, 100, 0, { if (it == 0) "OFF" else "$it %" }) { interp.humanize = it / 100f; prefs.edit().putInt("humanize", it).apply() }
+        hum.valor = (interp.humanize * 100f + 0.5f).toInt()
+        vel.tamTexto = 20f; hum.tamTexto = 20f
+        barra.addView(estado, LinearLayout.LayoutParams(0, dp(34), 1.7f))
         barra.addView(btnCanal, LinearLayout.LayoutParams(0, dp(34), 0.7f))
+        barra.addView(vel, LinearLayout.LayoutParams(0, dp(34), 0.55f))
+        barra.addView(hum, LinearLayout.LayoutParams(0, dp(34), 0.75f))
         barra.addView(tabTeclado, LinearLayout.LayoutParams(0, dp(34), 0.7f))
         barra.addView(tabFaders, LinearLayout.LayoutParams(0, dp(34), 0.7f))
         raiz.addView(barra, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -90,7 +101,7 @@ class MainActivity : Activity() {
     private fun crearPaginaTeclado(): View {
         val pag = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(12, 4, 12, 12) }
         val fila = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        teclado = Teclado(this, midi)
+        teclado = Teclado(this, midi, interp)
         // posicion (antes se guardaba la nota de inicio; se convierte)
         teclado.primeraBlanca = if (prefs.contains("primeraBlanca")) prefs.getInt("primeraBlanca", 28)
                                 else prefs.getInt("notaBase", 48) / 12 * 7

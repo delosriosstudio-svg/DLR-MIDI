@@ -14,11 +14,11 @@ import kotlin.math.exp
 /**
  * Teclado de piano multitouch.
  * - Varios dedos a la vez; deslizar pasa de una tecla a otra (glissando).
- * - Velocidad segun la altura del toque: arriba suave, abajo fuerte.
+ * - Velocity: la pone el Interprete (VEL + HUMANIZE).
  * - Escala de ayuda: ilumina sus notas con nombre y grado; BLOQUEO = las demas no suenan.
  * - CC DEDO: subir/bajar el dedo sobre la tecla manda un CC (relativo, el ultimo dedo que se mueve).
  */
-class Teclado(context: Context, private val midi: Midi) : View(context), Choreographer.FrameCallback {
+class Teclado(context: Context, private val midi: Midi, private val interp: Interprete) : View(context), Choreographer.FrameCallback {
 
     /** indice absoluto de la primera tecla blanca (0 = C-1). 28 = C3 */
     var primeraBlanca = 28
@@ -115,22 +115,20 @@ class Teclado(context: Context, private val midi: Midi) : View(context), Choreog
         return n
     }
 
-    private fun velocidad(y: Float): Int = (35 + 92 * (y / height).coerceIn(0f, 1f)).toInt()
-
-    private fun encender(nota: Int, vel: Int) {
+    private fun encender(nota: Int) {
         if (nota !in 0..127) return
-        if (sonando[nota] == 0) midi.notaOn(nota, vel)
+        if (sonando[nota] == 0) interp.on(nota)
         sonando[nota]++
     }
 
     private fun apagar(nota: Int) {
         if (nota !in 0..127 || sonando[nota] == 0) return
         sonando[nota]--
-        if (sonando[nota] == 0) midi.notaOff(nota)
+        if (sonando[nota] == 0) interp.off(nota)
     }
 
     fun soltarTodo() {
-        for (n in 0..127) if (sonando[n] > 0) { sonando[n] = 0; midi.notaOff(n) }
+        for (n in 0..127) if (sonando[n] > 0) { sonando[n] = 0; interp.off(n) }
         dedos.clear(); ultY.clear()
         invalidate()
     }
@@ -145,7 +143,7 @@ class Teclado(context: Context, private val midi: Midi) : View(context), Choreog
                 val n = notaEn(e.getX(i), e.getY(i))
                 if (n >= 0) {
                     dedos[e.getPointerId(i)] = n; ultY[e.getPointerId(i)] = e.getY(i)
-                    encender(n, velocidad(e.getY(i)))
+                    encender(n)
                 }
             }
             MotionEvent.ACTION_MOVE -> {
@@ -164,7 +162,7 @@ class Teclado(context: Context, private val midi: Midi) : View(context), Choreog
                     val n = notaEn(e.getX(i), e.getY(i))
                     if (n != antes) {
                         if (antes >= 0) apagar(antes)
-                        if (n >= 0) { dedos[id] = n; encender(n, velocidad(e.getY(i))) } else dedos.remove(id)
+                        if (n >= 0) { dedos[id] = n; encender(n) } else dedos.remove(id)
                     }
                 }
                 if (ccDedo >= 0 && mejorDy != 0f) {

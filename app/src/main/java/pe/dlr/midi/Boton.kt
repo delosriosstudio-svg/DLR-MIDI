@@ -118,3 +118,49 @@ class Repetir(context: Context, texto: String, private val accion: () -> Unit) :
         return true
     }
 }
+
+/**
+ * Valor que se ajusta arrastrando el dedo (arriba/derecha = sube), sin abrir ventanas.
+ * Doble toque = valor por defecto.
+ */
+class Valor(
+    context: Context,
+    private val etiqueta: String,
+    private val min: Int, private val max: Int, private val defecto: Int,
+    private val formato: (Int) -> String,
+    private val alCambiar: (Int) -> Unit,
+) : Boton(context, "") {
+    var valor = defecto
+        set(v) { field = v.coerceIn(min, max); actualizar() }
+    private var acum = 0f
+    private var x0 = 0f
+    private var y0 = 0f
+    private var ultimoToque = 0L
+
+    init { colorActivo = Estilo.AZUL; actualizar() }
+
+    private fun actualizar() { texto = etiqueta + "\n" + formato(valor); invalidate() }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                apretado = true; x0 = e.x; y0 = e.y; acum = 0f
+                val ahora = System.currentTimeMillis()
+                if (ahora - ultimoToque < 300) { valor = defecto; alCambiar(valor) }
+                ultimoToque = ahora
+            }
+            MotionEvent.ACTION_MOVE -> {
+                // 6 px por paso; vale arrastrar hacia arriba o hacia la derecha
+                acum += ((e.x - x0) + (y0 - e.y)) / 6f
+                x0 = e.x; y0 = e.y
+                val pasos = acum.toInt()
+                if (pasos != 0) { acum -= pasos; val v = (valor + pasos).coerceIn(min, max); if (v != valor) { valor = v; alCambiar(v) } }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> apretado = false
+        }
+        invalidate()
+        return true
+    }
+}
