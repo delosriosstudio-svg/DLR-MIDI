@@ -101,3 +101,20 @@ class Sustain(context: Context, private val midi: Midi) : Boton(context, "SUSTAI
 
     fun reiniciar() { enganchado = false; soltarAlLevantar = false; texto = "SUSTAIN"; tamTexto = 40f; mandar(false) }
 }
+
+/** Boton que repite su accion mientras se mantiene presionado (flechas). */
+class Repetir(context: Context, texto: String, private val accion: () -> Unit) : Boton(context, texto) {
+    private val repetir = object : Runnable {
+        override fun run() { accion(); postDelayed(this, 110) }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { apretado = true; accion(); postDelayed(repetir, 400) }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { apretado = false; removeCallbacks(repetir) }
+        }
+        invalidate()
+        return true
+    }
+}

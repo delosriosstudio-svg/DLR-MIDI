@@ -34,6 +34,9 @@ class MainActivity : Activity() {
     private lateinit var sustain: Sustain
     private lateinit var etiquetaOct: Boton
     private lateinit var btnEscala: Boton
+    private lateinit var btnTonica: Boton
+    private lateinit var btnBloqueo: Boton
+    private lateinit var btnCCDedo: Boton
     private lateinit var btnCanal: Boton
     private lateinit var tabTeclado: Boton
     private lateinit var tabFaders: Boton
@@ -88,53 +91,109 @@ class MainActivity : Activity() {
         val pag = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(12, 4, 12, 12) }
         val fila = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         teclado = Teclado(this, midi)
-        teclado.notaBase = prefs.getInt("notaBase", 48)
-
+        // posicion (antes se guardaba la nota de inicio; se convierte)
+        teclado.primeraBlanca = if (prefs.contains("primeraBlanca")) prefs.getInt("primeraBlanca", 28)
+                                else prefs.getInt("notaBase", 48) / 12 * 7
         teclado.tonica = prefs.getInt("tonica", -1)
-        teclado.modo = prefs.getInt("modo", 0)
-        val menos = Boton(this, "OCT -") { cambiarOctava(-12) }.apply { tamTexto = 24f }
-        etiquetaOct = Boton(this, "") { }.apply { tamTexto = 24f; soloTexto = true }
-        val mas = Boton(this, "OCT +") { cambiarOctava(12) }.apply { tamTexto = 24f }
-        btnEscala = Boton(this, "") { elegirEscala() }.apply { tamTexto = 24f; colorActivo = 0xFFF0B97E.toInt() }
+        teclado.escala = prefs.getInt("escala", prefs.getInt("modo", 0))
+        teclado.bloqueo = prefs.getBoolean("bloqueo", false)
+        teclado.ccDedo = prefs.getInt("ccDedo", -1)
+        teclado.fijarCC(prefs.getFloat("valCCDedo", 0f))
+        teclado.alCambiarCC = { actualizarCCDedo() }
+
+        val chico = 22f
+        val menos = Boton(this, "OCT -") { mover(-7) }.apply { tamTexto = chico }
+        val izq = Repetir(this, "◀") { mover(-1) }.apply { tamTexto = 26f }
+        etiquetaOct = Boton(this, "") { }.apply { tamTexto = chico; soloTexto = true }
+        val der = Repetir(this, "▶") { mover(1) }.apply { tamTexto = 26f }
+        val mas = Boton(this, "OCT +") { mover(7) }.apply { tamTexto = chico }
+        btnTonica = Boton(this, "") { elegirTonica() }.apply { tamTexto = chico; colorActivo = 0xFFF0B97E.toInt() }
+        btnEscala = Boton(this, "") { elegirEscala() }.apply { tamTexto = chico; colorActivo = 0xFFF0B97E.toInt() }
+        btnBloqueo = Boton(this, "") { alternarBloqueo() }.apply { tamTexto = chico; colorActivo = Estilo.ROJO }
+        btnCCDedo = Boton(this, "") { elegirCCDedo() }.apply { tamTexto = chico; colorActivo = Estilo.AZUL }
         sustain = Sustain(this, midi)
-        fila.addView(menos, LinearLayout.LayoutParams(0, dp(38), 0.55f))
-        fila.addView(etiquetaOct, LinearLayout.LayoutParams(0, dp(38), 0.5f))
-        fila.addView(mas, LinearLayout.LayoutParams(0, dp(38), 0.55f))
-        fila.addView(View(this), LinearLayout.LayoutParams(0, dp(38), 0.25f))
-        fila.addView(btnEscala, LinearLayout.LayoutParams(0, dp(38), 1.3f))
-        fila.addView(View(this), LinearLayout.LayoutParams(0, dp(38), 0.4f))
-        fila.addView(sustain, LinearLayout.LayoutParams(0, dp(56), 2f))
+
+        val h = dp(38)
+        fun agregar(v: View, peso: Float, alto: Int = h) = fila.addView(v, LinearLayout.LayoutParams(0, alto, peso))
+        agregar(menos, 0.5f); agregar(izq, 0.32f); agregar(etiquetaOct, 0.55f); agregar(der, 0.32f); agregar(mas, 0.5f)
+        agregar(View(this), 0.12f)
+        agregar(btnTonica, 0.62f); agregar(btnEscala, 0.95f); agregar(btnBloqueo, 0.42f)
+        agregar(View(this), 0.12f)
+        agregar(btnCCDedo, 0.85f)
+        agregar(View(this), 0.12f)
+        agregar(sustain, 1.4f, dp(52))
         pag.addView(fila, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         pag.addView(View(this), LinearLayout.LayoutParams(1, dp(8)))
         pag.addView(teclado, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        actualizarOctava()
+        actualizarPosicion()
         actualizarEscala()
+        actualizarCCDedo()
         return pag
     }
 
-    private fun cambiarOctava(d: Int) {
-        val n = (teclado.notaBase + d).coerceIn(12, 96)
-        teclado.notaBase = n
-        prefs.edit().putInt("notaBase", n).apply()
-        actualizarOctava()
+    /** mover el teclado: 1 = una tecla blanca, 7 = una octava */
+    private fun mover(d: Int) {
+        teclado.primeraBlanca = teclado.primeraBlanca + d
+        prefs.edit().putInt("primeraBlanca", teclado.primeraBlanca).apply()
+        actualizarPosicion()
     }
 
-    private fun actualizarOctava() { etiquetaOct.texto = "OCTAVA\nC" + (teclado.notaBase / 12 - 1); etiquetaOct.invalidate() }
+    private fun actualizarPosicion() {
+        val a = teclado.primeraBlanca
+        etiquetaOct.texto = Teclado.nombreBlanca(a) + " – " + Teclado.nombreBlanca(a + teclado.teclasBlancas - 1)
+        etiquetaOct.invalidate()
+    }
 
-    private fun elegirEscala() {
-        val ops = Escalas.opciones
-        val actual = ops.indexOfFirst { it.first == teclado.tonica && (teclado.tonica < 0 || it.second == teclado.modo) }
-        dialogo("Escala (ilumina sus notas)", Array(ops.size) { Escalas.nombreEscala(ops[it].first, ops[it].second) }, actual) { i ->
-            teclado.tonica = ops[i].first; teclado.modo = ops[i].second
-            prefs.edit().putInt("tonica", teclado.tonica).putInt("modo", teclado.modo).apply()
+    private fun elegirTonica() {
+        val items = arrayOf("Sin tonalidad (apagar ayuda)") + Escalas.TONICAS
+        dialogo("Tonalidad", items, teclado.tonica + 1) { i ->
+            teclado.tonica = i - 1
+            prefs.edit().putInt("tonica", teclado.tonica).apply()
             actualizarEscala()
         }
     }
 
+    private fun elegirEscala() {
+        val items = Array(Escalas.LISTA.size) { Escalas.LISTA[it].nombre }
+        dialogo("Escala", items, teclado.escala) { i ->
+            teclado.escala = i
+            prefs.edit().putInt("escala", i).apply()
+            actualizarEscala()
+        }
+    }
+
+    private fun alternarBloqueo() {
+        if (teclado.tonica < 0) { estado.fijarAviso("Elige una tonalidad para bloquear"); return }
+        teclado.bloqueo = !teclado.bloqueo
+        prefs.edit().putBoolean("bloqueo", teclado.bloqueo).apply()
+        actualizarEscala()
+    }
+
     private fun actualizarEscala() {
-        btnEscala.texto = if (teclado.tonica < 0) "ESCALA" else Escalas.nombreEscala(teclado.tonica, teclado.modo)
-        btnEscala.activo = teclado.tonica >= 0
-        btnEscala.invalidate()
+        val on = teclado.tonica >= 0
+        btnTonica.texto = Escalas.nombreTonica(teclado.tonica, teclado.escala)
+        btnTonica.activo = on
+        btnEscala.texto = Escalas.escala(teclado.escala).nombre.uppercase()
+        btnEscala.activo = on
+        btnBloqueo.texto = if (teclado.bloqueo) "BLOQ.\nON" else "BLOQ."
+        btnBloqueo.activo = on && teclado.bloqueo
+        listOf(btnTonica, btnEscala, btnBloqueo).forEach { it.invalidate() }
+    }
+
+    private fun elegirCCDedo() {
+        val items = arrayOf("Apagado") + Array(128) { n -> "CC $n  " + Cc.nombre(n) }
+        dialogo("CC con la altura del dedo", items, teclado.ccDedo + 1) { i ->
+            teclado.ccDedo = i - 1
+            prefs.edit().putInt("ccDedo", teclado.ccDedo).apply()
+            actualizarCCDedo()
+        }
+    }
+
+    private fun actualizarCCDedo() {
+        val cc = teclado.ccDedo
+        btnCCDedo.texto = if (cc < 0) "CC DEDO\nOFF" else "DEDO CC$cc\n" + (teclado.valorCC * 127f + 0.5f).toInt()
+        btnCCDedo.activo = cc >= 0
+        btnCCDedo.invalidate()
     }
 
     /** Ventana de seleccion con una X para cerrar. */
@@ -218,6 +277,7 @@ class MainActivity : Activity() {
         sustain.reiniciar()
         val e = prefs.edit()
         faders.forEachIndexed { i, f -> e.putFloat("val$i", f.valor) }
+        e.putFloat("valCCDedo", teclado.valorCC)
         e.apply()
         midi.detener()
         super.onPause()
@@ -243,7 +303,13 @@ class Estado(context: Context) : View(context) {
     private val pPunto = Estilo.pincel(Estilo.ROJO)
     private val pTexto = Estilo.pincel(Estilo.TEXTO, 28f).apply { textAlign = Paint.Align.LEFT }
 
-    fun fijar(t: String, conectado: Boolean) { texto = t; ok = conectado; invalidate() }
+    private var base = texto
+    fun fijar(t: String, conectado: Boolean) { texto = t; base = t; ok = conectado; invalidate() }
+    /** mensaje por 2 segundos */
+    fun fijarAviso(t: String) {
+        texto = t; invalidate()
+        postDelayed({ texto = base; invalidate() }, 2000)
+    }
 
     override fun onDraw(c: Canvas) {
         pPunto.color = if (ok) Estilo.VERDE else Estilo.ROJO
