@@ -22,6 +22,18 @@ class Teclado(context: Context, private val midi: Midi) : View(context) {
     var teclasBlancas = 15
         set(v) { soltarTodo(); field = v.coerceIn(7, 29); invalidate() }
 
+    /** Escala de ayuda: tonica 0..11 (Do..Si), -1 = sin escala; modo 0 = mayor, 1 = menor */
+    var tonica = -1
+        set(v) { field = v; invalidate() }
+    var modo = 0
+        set(v) { field = v; invalidate() }
+
+    private fun grado(nota: Int): Int {           // -1 si no esta en la escala, 0 = tonica
+        if (tonica < 0) return -1
+        val i = ((nota - tonica) % 12 + 12) % 12
+        return Escalas.intervalos(modo).indexOf(i)
+    }
+
     private val dedos = HashMap<Int, Int>()          // id del dedo -> nota sonando
     private val sonando = IntArray(128)              // cuantos dedos tienen cada nota
 
@@ -29,7 +41,14 @@ class Teclado(context: Context, private val midi: Midi) : View(context) {
     private val pBlancaOn = Estilo.pincel(Estilo.ACENTO)
     private val pNegra = Estilo.pincel(0xFF15161A.toInt())
     private val pNegraOn = Estilo.pincel(0xFFC77526.toInt())
-    private val pEtiqueta = Estilo.pincel(0xFF6B6F78.toInt(), 30f, true).apply { textAlign = android.graphics.Paint.Align.CENTER }
+    private val pEtiqueta = Estilo.pincel(0xFF6B6F78.toInt(), 26f, true).apply { textAlign = android.graphics.Paint.Align.CENTER }
+    private val pBlancaEsc = Estilo.pincel(0xFFF3DEC4.toInt())
+    private val pBlancaTon = Estilo.pincel(0xFFF0B97E.toInt())
+    private val pNegraEsc = Estilo.pincel(0xFF5C4430.toInt())
+    private val pNegraTon = Estilo.pincel(0xFF94602F.toInt())
+    private val pPunto = Estilo.pincel(Estilo.ACENTO)
+    private val pNombre = Estilo.pincel(0xFF7A5230.toInt(), 30f, true).apply { textAlign = android.graphics.Paint.Align.CENTER }
+    private val pNombreN = Estilo.pincel(0xFFF3DEC4.toInt(), 24f, true).apply { textAlign = android.graphics.Paint.Align.CENTER }
     private val r = RectF()
 
     // posicion de las teclas negras dentro de la octava (despues de que blanca) y su semitono
@@ -116,17 +135,40 @@ class Teclado(context: Context, private val midi: Midi) : View(context) {
         c.drawColor(Estilo.FONDO)
         for (i in 0 until teclasBlancas) {
             val n = notaBlanca(i)
+            val g = grado(n)
             r.set(i * w + 2f, 0f, (i + 1) * w - 2f, h - 4f)
-            c.drawRoundRect(r, 10f, 10f, if (n in 0..127 && sonando[n] > 0) pBlancaOn else pBlanca)
-            if (i % 7 == 0) c.drawText("C" + (n / 12 - 1), (i + 0.5f) * w, h - 26f, pEtiqueta)
+            val p = when {
+                n in 0..127 && sonando[n] > 0 -> pBlancaOn
+                g == 0 -> pBlancaTon
+                g > 0 -> pBlancaEsc
+                else -> pBlanca
+            }
+            c.drawRoundRect(r, 10f, 10f, p)
+            val cx = (i + 0.5f) * w
+            if (i % 7 == 0) c.drawText("C" + (n / 12 - 1), cx, h * 0.6f + 40f, pEtiqueta)
+            if (g >= 0) {
+                c.drawCircle(cx, h - 90f, if (g == 0) 13f else 8f, pPunto)
+                c.drawText(Escalas.nombreNota(n % 12, tonica, modo), cx, h - 32f, pNombre)
+            }
         }
         for (i in 0 until teclasBlancas - 1) {
             val k = negraTras.indexOf(i % 7)
             if (k < 0) continue
             val n = notaBase + (i / 7) * 12 + negraSemi[k]
+            val g = grado(n)
             val cx = (i + 1) * w
             r.set(cx - w * 0.31f, 0f, cx + w * 0.31f, h * 0.6f)
-            c.drawRoundRect(r, 8f, 8f, if (n in 0..127 && sonando[n] > 0) pNegraOn else pNegra)
+            val p = when {
+                n in 0..127 && sonando[n] > 0 -> pNegraOn
+                g == 0 -> pNegraTon
+                g > 0 -> pNegraEsc
+                else -> pNegra
+            }
+            c.drawRoundRect(r, 8f, 8f, p)
+            if (g >= 0) {
+                c.drawCircle(cx, h * 0.6f - 70f, if (g == 0) 11f else 7f, pPunto)
+                c.drawText(Escalas.nombreNota(n % 12, tonica, modo), cx, h * 0.6f - 24f, pNombreN)
+            }
         }
     }
 }

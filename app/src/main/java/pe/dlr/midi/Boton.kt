@@ -14,6 +14,8 @@ open class Boton(context: Context, var texto: String, var alTocar: () -> Unit = 
         set(v) { field = v; invalidate() }
     var colorActivo = Estilo.ACENTO
     var tamTexto = 34f
+    /** true = solo texto, sin caja (etiquetas) */
+    var soloTexto = false
     protected var apretado = false
     protected val r = RectF()
     private val pFondo = Estilo.pincel(Estilo.PANEL)
@@ -36,6 +38,13 @@ open class Boton(context: Context, var texto: String, var alTocar: () -> Unit = 
 
     override fun onDraw(c: Canvas) {
         r.set(4f, 4f, width - 4f, height - 4f)
+        if (soloTexto) {
+            pTexto.textSize = tamTexto; pTexto.color = Estilo.TENUE
+            val lineas = texto.split("\n"); val alto = tamTexto * 1.15f
+            var y = height / 2f - (lineas.size - 1) * alto / 2f - (pTexto.ascent() + pTexto.descent()) / 2f
+            for ((i, l) in lineas.withIndex()) { pTexto.color = if (i == lineas.size - 1) Estilo.TEXTO else Estilo.TENUE; c.drawText(l, width / 2f, y, pTexto); y += alto }
+            return
+        }
         pFondo.color = when {
             activo -> colorActivo
             apretado -> Estilo.BORDE

@@ -16,6 +16,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 
 /**
  * DLR MIDI — controlador MIDI para REAPER.
@@ -32,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var teclado: Teclado
     private lateinit var sustain: Sustain
     private lateinit var etiquetaOct: Boton
+    private lateinit var btnEscala: Boton
     private lateinit var btnCanal: Boton
     private lateinit var tabTeclado: Boton
     private lateinit var tabFaders: Boton
@@ -57,13 +59,13 @@ class MainActivity : Activity() {
 
         // ---- barra superior: estado | canal | pestanas
         val barra = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(12, 8, 12, 4) }
-        btnCanal = Boton(this, "") { elegirCanal() }.apply { tamTexto = 30f }
-        tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 30f }
-        tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 30f }
-        barra.addView(estado, LinearLayout.LayoutParams(0, dp(48), 1.6f))
-        barra.addView(btnCanal, LinearLayout.LayoutParams(0, dp(48), 0.8f))
-        barra.addView(tabTeclado, LinearLayout.LayoutParams(0, dp(48), 1f))
-        barra.addView(tabFaders, LinearLayout.LayoutParams(0, dp(48), 1f))
+        btnCanal = Boton(this, "") { elegirCanal() }.apply { tamTexto = 24f }
+        tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 24f }
+        tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
+        barra.addView(estado, LinearLayout.LayoutParams(0, dp(34), 2f))
+        barra.addView(btnCanal, LinearLayout.LayoutParams(0, dp(34), 0.7f))
+        barra.addView(tabTeclado, LinearLayout.LayoutParams(0, dp(34), 0.7f))
+        barra.addView(tabFaders, LinearLayout.LayoutParams(0, dp(34), 0.7f))
         raiz.addView(barra, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         contenido = FrameLayout(this)
@@ -88,19 +90,25 @@ class MainActivity : Activity() {
         teclado = Teclado(this, midi)
         teclado.notaBase = prefs.getInt("notaBase", 48)
 
-        val menos = Boton(this, "OCT -") { cambiarOctava(-12) }
-        etiquetaOct = Boton(this, "") { }.apply { tamTexto = 30f }
-        val mas = Boton(this, "OCT +") { cambiarOctava(12) }
+        teclado.tonica = prefs.getInt("tonica", -1)
+        teclado.modo = prefs.getInt("modo", 0)
+        val menos = Boton(this, "OCT -") { cambiarOctava(-12) }.apply { tamTexto = 24f }
+        etiquetaOct = Boton(this, "") { }.apply { tamTexto = 24f; soloTexto = true }
+        val mas = Boton(this, "OCT +") { cambiarOctava(12) }.apply { tamTexto = 24f }
+        btnEscala = Boton(this, "") { elegirEscala() }.apply { tamTexto = 24f; colorActivo = 0xFFF0B97E.toInt() }
         sustain = Sustain(this, midi)
-        fila.addView(menos, LinearLayout.LayoutParams(0, dp(56), 1f))
-        fila.addView(etiquetaOct, LinearLayout.LayoutParams(0, dp(56), 1f))
-        fila.addView(mas, LinearLayout.LayoutParams(0, dp(56), 1f))
-        fila.addView(View(this), LinearLayout.LayoutParams(0, dp(56), 0.6f))
-        fila.addView(sustain, LinearLayout.LayoutParams(0, dp(56), 2.2f))
+        fila.addView(menos, LinearLayout.LayoutParams(0, dp(38), 0.55f))
+        fila.addView(etiquetaOct, LinearLayout.LayoutParams(0, dp(38), 0.5f))
+        fila.addView(mas, LinearLayout.LayoutParams(0, dp(38), 0.55f))
+        fila.addView(View(this), LinearLayout.LayoutParams(0, dp(38), 0.25f))
+        fila.addView(btnEscala, LinearLayout.LayoutParams(0, dp(38), 1.3f))
+        fila.addView(View(this), LinearLayout.LayoutParams(0, dp(38), 0.4f))
+        fila.addView(sustain, LinearLayout.LayoutParams(0, dp(56), 2f))
         pag.addView(fila, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         pag.addView(View(this), LinearLayout.LayoutParams(1, dp(8)))
         pag.addView(teclado, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         actualizarOctava()
+        actualizarEscala()
         return pag
     }
 
@@ -111,7 +119,44 @@ class MainActivity : Activity() {
         actualizarOctava()
     }
 
-    private fun actualizarOctava() { etiquetaOct.texto = "C" + (teclado.notaBase / 12 - 1); etiquetaOct.invalidate() }
+    private fun actualizarOctava() { etiquetaOct.texto = "OCTAVA\nC" + (teclado.notaBase / 12 - 1); etiquetaOct.invalidate() }
+
+    private fun elegirEscala() {
+        val ops = Escalas.opciones
+        val actual = ops.indexOfFirst { it.first == teclado.tonica && (teclado.tonica < 0 || it.second == teclado.modo) }
+        dialogo("Escala (ilumina sus notas)", Array(ops.size) { Escalas.nombreEscala(ops[it].first, ops[it].second) }, actual) { i ->
+            teclado.tonica = ops[i].first; teclado.modo = ops[i].second
+            prefs.edit().putInt("tonica", teclado.tonica).putInt("modo", teclado.modo).apply()
+            actualizarEscala()
+        }
+    }
+
+    private fun actualizarEscala() {
+        btnEscala.texto = if (teclado.tonica < 0) "ESCALA" else Escalas.nombreEscala(teclado.tonica, teclado.modo)
+        btnEscala.activo = teclado.tonica >= 0
+        btnEscala.invalidate()
+    }
+
+    /** Ventana de seleccion con una X para cerrar. */
+    private fun dialogo(titulo: String, items: Array<String>, marcado: Int, alElegir: (Int) -> Unit) {
+        val cab = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), dp(12), dp(8), dp(8))
+        }
+        val t = TextView(this).apply { text = titulo; textSize = 18f; setTextColor(Estilo.TEXTO) }
+        val x = TextView(this).apply {
+            text = "✕"; textSize = 22f; setTextColor(Estilo.TEXTO); gravity = Gravity.CENTER
+            setPadding(dp(14), dp(4), dp(14), dp(4))
+        }
+        cab.addView(t, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        cab.addView(x, LinearLayout.LayoutParams(dp(52), dp(44)))
+        val d = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setCustomTitle(cab)
+            .setSingleChoiceItems(items, marcado) { dlg, i -> alElegir(i); dlg.dismiss() }
+            .create()
+        x.setOnClickListener { d.dismiss() }
+        d.show()
+    }
 
     // ------------------------------------------------------------ FADERS
     private fun crearPaginaFaders(): View {
@@ -128,28 +173,22 @@ class MainActivity : Activity() {
 
     private fun elegirCC(f: Fader) {
         val lista = Array(128) { n -> "CC $n  " + Cc.nombre(n) }
-        AlertDialog.Builder(this)
-            .setTitle("CC del fader")
-            .setSingleChoiceItems(lista, f.numero) { d, n ->
-                f.numero = n
-                prefs.edit().putInt("cc" + faders.indexOf(f), n).apply()
-                f.reenviar(); f.invalidate(); d.dismiss()
-            }
-            .show()
+        dialogo("CC del fader", lista, f.numero) { n ->
+            f.numero = n
+            prefs.edit().putInt("cc" + faders.indexOf(f), n).apply()
+            f.reenviar(); f.invalidate()
+        }
     }
 
     // ------------------------------------------------------------ CANAL / PESTANAS
     private fun elegirCanal() {
         val lista = Array(16) { "Canal ${it + 1}" }
-        AlertDialog.Builder(this)
-            .setTitle("Canal MIDI")
-            .setSingleChoiceItems(lista, midi.canal - 1) { d, n ->
-                teclado.soltarTodo(); sustain.reiniciar()
-                midi.canal = n + 1
-                prefs.edit().putInt("canal", midi.canal).apply()
-                actualizarCanal(); d.dismiss()
-            }
-            .show()
+        dialogo("Canal MIDI", lista, midi.canal - 1) { n ->
+            teclado.soltarTodo(); sustain.reiniciar()
+            midi.canal = n + 1
+            prefs.edit().putInt("canal", midi.canal).apply()
+            actualizarCanal()
+        }
     }
 
     private fun actualizarCanal() { btnCanal.texto = "CANAL ${midi.canal}"; btnCanal.invalidate() }
