@@ -313,7 +313,7 @@ class PaginaAcordes(
         bBajo.texto = if (!conBajo) "BAJO: normal" else "BAJO: " + Escalas.nombreNota(a!!.bajo, tonica, escala)
         bBajo.activo = conBajo; bBajo.invalidate()
         bBajoOct.texto = if (!conBajo || f == null) "—" else {
-            val o = if (a!!.bajoOct >= 0) a.bajoOct else Acordes.bajoAuto(f, a, octavaDe(p!!))
+            val o = if (a!!.bajoOct >= 0) a.bajoOct + octavaDe(p!!) - Acordes.OCT_REF else Acordes.bajoAuto(f, a, octavaDe(p))
             Acordes.letra(a.bajo, bemoles()) + o + if (a.bajoOct < 0) "\nauto" else ""
         }
         bBajoOct.invalidate()
@@ -407,8 +407,9 @@ class PaginaAcordes(
         val f = forma(p) ?: return
         val a = aj(p)
         if (a.bajo < 0) return
-        val actual = if (a.bajoOct >= 0) a.bajoOct else Acordes.bajoAuto(f, a, octavaDe(p))
-        a.bajoOct = (actual + d).coerceIn(0, 7)
+        val mover = octavaDe(p) - Acordes.OCT_REF
+        val actual = if (a.bajoOct >= 0) a.bajoOct + mover else Acordes.bajoAuto(f, a, octavaDe(p))
+        a.bajoOct = ((actual + d).coerceIn(0, 7) - mover).coerceAtLeast(0)
         guardar(); refrescar()
     }
 
@@ -455,7 +456,9 @@ class PaginaAcordes(
     private fun guardarPiano() {
         val p = sel ?: return
         if (mini.marcadas.isNotEmpty()) {
-            libres[p.indice] = Libre(notas = mini.marcadas.toList())
+            // se guarda "en C3": asi sigue a la OCTAVA general
+            val mover = (octavaDe(p) - Acordes.OCT_REF) * 12
+            libres[p.indice] = Libre(notas = mini.marcadas.map { it - mover })
             ajL[p.indice] = Ajustes()
             guardar()
         }

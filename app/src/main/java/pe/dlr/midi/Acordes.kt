@@ -106,11 +106,15 @@ object Acordes {
         return Forma(l.raiz, t, e)
     }
 
+    /** Las notas tocadas y la octava fija del bajo se guardan "en C3" y siguen a la OCTAVA general. */
+    const val OCT_REF = 3
+
     /** Notas MIDI a tocar. octava: la raiz cae en esa octava (C3 = 3). */
     fun notas(f: Forma, a: Ajustes, octava: Int): List<Int> {
         val v: MutableList<Int>
+        val mover = (octava - OCT_REF) * 12
         if (f.exactas.isNotEmpty()) {
-            val base = f.exactas.sorted()
+            val base = f.exactas.sorted().map { it + mover }
             val inv = a.inv.coerceIn(0, base.size - 1)
             v = base.mapIndexed { i, n -> if (i < inv) n + 12 else n }.toMutableList()
         } else {
@@ -125,7 +129,7 @@ object Acordes {
         if (a.bajo >= 0) {
             val low = v.minOrNull() ?: 48
             var b: Int
-            if (a.bajoOct >= 0) b = 12 * (a.bajoOct + 1) + a.bajo
+            if (a.bajoOct >= 0) b = 12 * (a.bajoOct + 1) + a.bajo + mover
             else { b = 12 * (octava + 1) + a.bajo; while (b > low - 5) b -= 12 }
             v.add(b)
         }
