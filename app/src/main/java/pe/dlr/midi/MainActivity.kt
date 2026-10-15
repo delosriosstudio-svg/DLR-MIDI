@@ -22,7 +22,7 @@ import android.widget.TextView
  * DLR MIDI — controlador MIDI para REAPER.
  * Pestanas: TECLADO (horizontal) y FADERS (vertical).
  */
-class MainActivity : Activity() {
+class MainActivity : Activity(), MainActivityApi {
 
     private lateinit var prefs: SharedPreferences
     private lateinit var midi: Midi
@@ -41,6 +41,8 @@ class MainActivity : Activity() {
     private lateinit var btnCanal: Boton
     private lateinit var tabTeclado: Boton
     private lateinit var tabFaders: Boton
+    private lateinit var tabAcordes: Boton
+    private lateinit var pagAcordes: PaginaAcordes
     private val faders = ArrayList<Fader>()
     private var pestana = 0
 
@@ -69,6 +71,7 @@ class MainActivity : Activity() {
         btnCanal = Boton(this, "") { elegirCanal() }.apply { tamTexto = 24f }
         tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 24f }
         tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
+        tabAcordes = Boton(this, "ACORDES") { mostrar(2) }.apply { tamTexto = 24f }
         val vel = Valor(this, "VEL", 1, 127, 100, { "$it" }) { interp.velBase = it; prefs.edit().putInt("velBase", it).apply() }
         vel.valor = interp.velBase
         val hum = Valor(this, "HUMANIZE", 0, 100, 0, { if (it == 0) "OFF" else "$it %" }) { interp.humanize = it / 100f; prefs.edit().putInt("humanize", it).apply() }
@@ -79,6 +82,7 @@ class MainActivity : Activity() {
         barra.addView(vel, LinearLayout.LayoutParams(0, dp(34), 0.55f))
         barra.addView(hum, LinearLayout.LayoutParams(0, dp(34), 0.75f))
         barra.addView(tabTeclado, LinearLayout.LayoutParams(0, dp(34), 0.7f))
+        barra.addView(tabAcordes, LinearLayout.LayoutParams(0, dp(34), 0.75f))
         barra.addView(tabFaders, LinearLayout.LayoutParams(0, dp(34), 0.7f))
         raiz.addView(barra, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
@@ -89,6 +93,8 @@ class MainActivity : Activity() {
         pagFaders = crearPaginaFaders()
         contenido.addView(pagTeclado)
         contenido.addView(pagFaders)
+        pagAcordes = PaginaAcordes(this, midi, interp, prefs)
+        contenido.addView(pagAcordes)
 
         setContentView(raiz)
         actualizarCanal()
@@ -208,7 +214,9 @@ class MainActivity : Activity() {
     }
 
     /** Ventana de seleccion con una X para cerrar. */
-    private fun dialogo(titulo: String, items: Array<String>, marcado: Int, alElegir: (Int) -> Unit) {
+    override fun contexto(): Context = this
+
+    override fun dialogo(titulo: String, items: Array<String>, marcado: Int, alElegir: (Int) -> Unit) {
         val cab = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(20), dp(12), dp(8), dp(8))
@@ -254,7 +262,7 @@ class MainActivity : Activity() {
     private fun elegirCanal() {
         val lista = Array(16) { "Canal ${it + 1}" }
         dialogo("Canal MIDI", lista, midi.canal - 1) { n ->
-            teclado.soltarTodo(); sustain.reiniciar()
+            teclado.soltarTodo(); sustain.reiniciar(); pagAcordes.soltarTodo()
             midi.canal = n + 1
             prefs.edit().putInt("canal", midi.canal).apply()
             actualizarCanal()
@@ -268,10 +276,13 @@ class MainActivity : Activity() {
         prefs.edit().putInt("pestana", p).apply()
         pagTeclado.visibility = if (p == 0) View.VISIBLE else View.GONE
         pagFaders.visibility = if (p == 1) View.VISIBLE else View.GONE
+        pagAcordes.visibility = if (p == 2) View.VISIBLE else View.GONE
         tabTeclado.activo = p == 0
         tabFaders.activo = p == 1
+        tabAcordes.activo = p == 2
         if (p != 0) teclado.soltarTodo()
-        // teclado en horizontal, faders en vertical
+        if (p != 2) pagAcordes.soltarTodo()
+        // teclado en horizontal; faders y acordes en vertical
         requestedOrientation = if (p == 0) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
     }
@@ -285,6 +296,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         teclado.soltarTodo()
+        pagAcordes.soltarTodo()
         sustain.reiniciar()
         val e = prefs.edit()
         faders.forEachIndexed { i, f -> e.putFloat("val$i", f.valor) }
