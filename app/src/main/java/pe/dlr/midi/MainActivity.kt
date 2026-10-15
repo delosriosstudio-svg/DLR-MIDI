@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -43,6 +44,11 @@ class MainActivity : Activity(), MainActivityApi {
     private lateinit var tabFaders: Boton
     private lateinit var tabAcordes: Boton
     private lateinit var pagAcordes: PaginaAcordes
+    private lateinit var marco: FrameLayout
+    private lateinit var velo: View
+    private lateinit var menu: PanelPlantillas
+    private var cargando = false
+    private var bordeX = -1f
     private val faders = ArrayList<Fader>()
     private var pestana = 0
 
@@ -72,6 +78,7 @@ class MainActivity : Activity(), MainActivityApi {
         tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 24f }
         tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
         tabAcordes = Boton(this, "ACORDES") { mostrar(2) }.apply { tamTexto = 24f }
+        val btnMenu = Boton(this, "☰") { abrirMenu() }.apply { tamTexto = 30f }
         val vel = Valor(this, "VEL", 1, 127, 100, { "$it" }) { interp.velBase = it; prefs.edit().putInt("velBase", it).apply() }
         vel.valor = interp.velBase
         val hum = Valor(this, "HUMANIZE", 0, 100, 0, { if (it == 0) "OFF" else "$it %" }) { interp.humanize = it / 100f; prefs.edit().putInt("humanize", it).apply() }
@@ -84,6 +91,7 @@ class MainActivity : Activity(), MainActivityApi {
         barra.addView(tabTeclado, LinearLayout.LayoutParams(0, dp(34), 0.7f))
         barra.addView(tabAcordes, LinearLayout.LayoutParams(0, dp(34), 0.75f))
         barra.addView(tabFaders, LinearLayout.LayoutParams(0, dp(34), 0.7f))
+        barra.addView(btnMenu, LinearLayout.LayoutParams(0, dp(34), 0.4f))
         raiz.addView(barra, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         contenido = FrameLayout(this)
@@ -96,7 +104,20 @@ class MainActivity : Activity(), MainActivityApi {
         pagAcordes = PaginaAcordes(this, midi, interp, prefs)
         contenido.addView(pagAcordes)
 
-        setContentView(raiz)
+        // ---- raiz con el menu lateral de TEMPLATES encima
+        marco = FrameLayout(this)
+        marco.addView(raiz, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        velo = View(this).apply { setBackgroundColor(0x99000000.toInt()); visibility = View.GONE; setOnClickListener { cerrarMenu() } }
+        marco.addView(velo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        menu = PanelPlantillas(this, prefs, { cerrarMenu() }) { nombre -> recargarCon(nombre) }
+        menu.visibility = View.GONE
+        marco.addView(menu, FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
+        // que el gesto "atras" de Android no se coma el deslizamiento desde el borde derecho
+        marco.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val h = v.height; val w = v.width
+            v.systemGestureExclusionRects = listOf(android.graphics.Rect(w - dp(28), h / 2 - dp(100), w, h / 2 + dp(100)))
+        }
+        setContentView(marco)
         actualizarCanal()
         mostrar(prefs.getInt("pestana", 0))
     }
@@ -298,12 +319,62 @@ class MainActivity : Activity(), MainActivityApi {
         teclado.soltarTodo()
         pagAcordes.soltarTodo()
         sustain.reiniciar()
+        if (!cargando) guardarEstado()
+        midi.detener()
+        super.onPause()
+    }
+
+    /** guarda lo que vive en memoria (faders, CC dedo, acordes) */
+    fun guardarEstado() {
+        pagAcordes.guardar()
         val e = prefs.edit()
         faders.forEachIndexed { i, f -> e.putFloat("val$i", f.valor) }
         e.putFloat("valCCDedo", teclado.valorCC)
         e.apply()
-        midi.detener()
-        super.onPause()
+    }
+
+    // ------------------------------------------------------------ menu de TEMPLATES
+    fun abrirMenu() {
+        if (menu.visibility == View.VISIBLE) return
+        teclado.soltarTodo(); pagAcordes.soltarTodo()
+        menu.refrescar()
+        menu.visibility = View.VISIBLE; velo.visibility = View.VISIBLE
+        menu.translationX = dp(340).toFloat()
+        menu.animate().translationX(0f).setDuration(180).start()
+    }
+
+    fun cerrarMenu() {
+        if (menu.visibility != View.VISIBLE) return
+        menu.animate().translationX(dp(340).toFloat()).setDuration(160).withEndAction {
+            menu.visibility = View.GONE; velo.visibility = View.GONE
+        }.start()
+    }
+
+    fun aviso(t: String) = estado.fijarAviso(t)
+
+    /** despues de cargar un template se reinicia la pantalla con los ajustes nuevos */
+    private fun recargarCon(nombre: String) {
+        cargando = true
+        prefs.edit().putString("ultimo_template", nombre).commit()
+        recreate()
+    }
+
+    /** deslizar desde el borde derecho hacia la izquierda abre los TEMPLATES */
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (menu.visibility != View.VISIBLE) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    if (e.x > marco.width - dp(22)) { bordeX = e.x; return true }
+                    bordeX = -1f
+                }
+                MotionEvent.ACTION_MOVE -> if (bordeX >= 0f) {
+                    if (bordeX - e.x > dp(40)) { bordeX = -1f; abrirMenu() }
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (bordeX >= 0f) { bordeX = -1f; return true }
+            }
+        }
+        return super.dispatchTouchEvent(e)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
