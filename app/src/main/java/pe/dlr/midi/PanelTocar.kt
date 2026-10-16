@@ -96,9 +96,15 @@ class PanelTocar(
             fb.addView(b, LayoutParams(0, dp(46), 1f))
         }
         val latch = prefs.getBoolean("ac_latch", false)
-        fb.addView(Boton(act, if (latch) "LATCH ON" else "LATCH") {
-            prefs.edit().putBoolean("ac_latch", !prefs.getBoolean("ac_latch", false)).apply(); acordes().releerForma(); refrescar()
-        }.apply { tamTexto = 20f; colorActivo = Estilo.ACENTO; activo = latch }, LayoutParams(0, dp(46), 1f))
+        if (modo >= 2) {
+            // en los patrones los cuadros siempre son interruptores
+            fb.addView(Boton(act, "LATCH\nSIEMPRE") { act.aviso("En ARPEGIO / PULSO / RITMO: toca para encender, otra vez para apagar") }
+                .apply { tamTexto = 18f; colorActivo = Estilo.ACENTO; activo = true }, LayoutParams(0, dp(46), 1f))
+        } else {
+            fb.addView(Boton(act, if (latch) "LATCH ON" else "LATCH") {
+                prefs.edit().putBoolean("ac_latch", !prefs.getBoolean("ac_latch", false)).apply(); acordes().releerForma(); refrescar()
+            }.apply { tamTexto = 20f; colorActivo = Estilo.ACENTO; activo = latch }, LayoutParams(0, dp(46), 1f))
+        }
         variable.addView(fb)
     }
 }

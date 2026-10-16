@@ -66,15 +66,20 @@ class Reproductor(private val midi: Midi, private val prefs: SharedPreferences, 
     }
 
     private val voces = HashMap<Any, Voz>()
+    /** reloj comun de los patrones: al cambiar de acorde el ritmo no se reinicia */
+    private var reloj0 = -1L
+    /** en ARPEGIO / PULSO / RITMO los cuadros son interruptores (siempre LATCH) */
+    val latchEfectivo get() = latch || modo >= 2
     val activos: Set<Any> get() = voces.keys
 
     fun estaSonando(clave: Any) = voces.containsKey(clave)
 
     /** dedo abajo sobre un cuadro. Devuelve true si quedo sonando. */
     fun abajo(clave: Any, notas: List<Int>): Boolean {
-        if (latch) {
+        if (latchEfectivo) {
             if (voces.containsKey(clave)) { parar(clave); return false }
-            for (k in voces.keys.toList()) parar(k)
+            // cambiar de acorde: se apaga el anterior pero el reloj sigue (el cambio cae a tiempo)
+            for (k in voces.keys.toList()) voces.remove(k)?.parar()
         } else parar(clave)
         if (notas.isEmpty()) return false
         val v = Voz(notas.sorted())
@@ -85,12 +90,12 @@ class Reproductor(private val midi: Midi, private val prefs: SharedPreferences, 
 
     /** dedo arriba. Devuelve true si sigue sonando (LATCH). */
     fun arriba(clave: Any): Boolean {
-        if (latch) return voces.containsKey(clave)
+        if (latchEfectivo) return voces.containsKey(clave)
         parar(clave); return false
     }
 
-    fun parar(clave: Any) { voces.remove(clave)?.parar() }
-    fun pararTodo() { for (k in voces.keys.toList()) parar(k); for (n in 0..127) if (conteo[n] > 0) { conteo[n] = 0; midi.notaOff(n) } }
+    fun parar(clave: Any) { voces.remove(clave)?.parar(); if (voces.isEmpty()) reloj0 = -1L }
+    fun pararTodo() { for (k in voces.keys.toList()) parar(k); reloj0 = -1L; for (n in 0..127) if (conteo[n] > 0) { conteo[n] = 0; midi.notaOff(n) } }
 
     private fun negraMs() = 60000f / bpm.coerceIn(20, 300)
 
@@ -118,25 +123,38 @@ class Reproductor(private val midi: Midi, private val prefs: SharedPreferences, 
                     else -> sube
                 }
                 val paso = negraMs() * DIV_FACTOR[div.coerceIn(0, 4)]
-                pasoArp(v, seq, 0, paso, SystemClock.uptimeMillis(), base)
+                val ahora = SystemClock.uptimeMillis()
+                if (reloj0 < 0) reloj0 = ahora
+                // entra en el siguiente paso del reloj (o ya mismo si recien arranca)
+                val k0 = Math.ceil((ahora - reloj0) / paso.toDouble() - 0.02).toInt().coerceAtLeast(0)
+                pasoArp(v, seq, k0, k0, paso, reloj0, base)
             }
             3, 4 -> {   // PULSO / RITMO
-                cicloRitmo(v, RITMOS[ritmo.coerceIn(0, RITMOS.size - 1)], 0, SystemClock.uptimeMillis(), base)
+                val r = RITMOS[ritmo.coerceIn(0, RITMOS.size - 1)]
+                val ahora = SystemClock.uptimeMillis()
+                if (reloj0 < 0) reloj0 = ahora
+                val ciclo = negraMs() * r.paso * r.largo
+                val c = ((ahora - reloj0) / ciclo).toInt().coerceAtLeast(0)
+                cicloRitmo(v, r, c, reloj0, base, primero = true)
             }
             else -> for (nota in v.notas) v.tocar(nota, base)   // NORMAL
         }
     }
 
-    private fun pasoArp(v: Voz, seq: List<Int>, k: Int, paso: Float, t0: Long, base: Int) {
+    private fun pasoArp(v: Voz, seq: List<Int>, k: Int, k0: Int, paso: Float, t0: Long, base: Int) {
         if (!v.vivo || seq.isEmpty()) return
-        val nota = if (arp == 3) seq[rnd.nextInt(seq.size)] else seq[k % seq.size]
-        v.tocar(nota, base + (if (k % seq.size == 0) 8 else 0))
+        val tk = t0 + (k * paso).toLong()
+        val espera = tk - SystemClock.uptimeMillis()
+        if (espera > 2) { v.programar(espera) { pasoArp(v, seq, k, k0, paso, t0, base) }; return }
+        val i = k - k0
+        val nota = if (arp == 3) seq[rnd.nextInt(seq.size)] else seq[i % seq.size]
+        v.tocar(nota, base + (if (i % seq.size == 0) 8 else 0))
         v.programar((paso * 0.85f).toLong()) { v.soltar(nota) }
         val siguiente = t0 + ((k + 1) * paso).toLong()
-        v.programar(siguiente - SystemClock.uptimeMillis()) { pasoArp(v, seq, k + 1, paso, t0, base) }
+        v.programar(siguiente - SystemClock.uptimeMillis()) { pasoArp(v, seq, k + 1, k0, paso, t0, base) }
     }
 
-    private fun cicloRitmo(v: Voz, r: Ritmo, ciclo: Int, t0: Long, base: Int) {
+    private fun cicloRitmo(v: Voz, r: Ritmo, ciclo: Int, t0: Long, base: Int, primero: Boolean = false) {
         if (!v.vivo) return
         val paso = negraMs() * r.paso
         val inicio = t0 + (ciclo * r.largo * paso).toLong()
@@ -149,6 +167,8 @@ class Reproductor(private val midi: Midi, private val prefs: SharedPreferences, 
             val (s, dur) = g
             val vv = base + (if (s in r.acentos) 10 else 0) + (if (s == 0) 4 else 0)
             val tn = inicio + (s * paso).toLong() - ahora
+            // al entrar a mitad de ciclo: los golpes que ya pasaron se saltan (el cambio cae a tiempo)
+            if (primero && tn < -15) continue
             val octava = modo == 3 && pulso == 2 && i % 2 == 1
             v.programar(tn) { for (n in notas) v.tocar(if (octava) n + 12 else n, vv) }
             v.programar(tn + (dur * paso * 0.85f).toLong()) { for (n in notas) v.soltar(if (octava) n + 12 else n) }
