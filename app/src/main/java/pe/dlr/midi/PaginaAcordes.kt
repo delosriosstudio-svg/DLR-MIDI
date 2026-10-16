@@ -19,6 +19,7 @@ class Pad(context: Context, val diatonico: Boolean, val indice: Int, private val
     var seleccionado = false
     var sonando = false
     var editar = false
+    var colorFondo = 0xFF2A2B30.toInt()
     private val pFondo = Estilo.pincel(Estilo.PANEL)
     private val pBorde = Estilo.pincel(Estilo.BORDE).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
     private val pTitulo = Estilo.pincel(Estilo.TEXTO, 44f, true).apply { textAlign = Paint.Align.CENTER }
@@ -36,11 +37,7 @@ class Pad(context: Context, val diatonico: Boolean, val indice: Int, private val
 
     override fun onDraw(c: Canvas) {
         r.set(4f, 4f, width - 4f, height - 4f)
-        pFondo.color = when {
-            sonando -> Estilo.ACENTO
-            diatonico -> 0xFF2A2B30.toInt()
-            else -> 0xFF22262E.toInt()
-        }
+        pFondo.color = if (sonando) Estilo.ACENTO else colorFondo
         c.drawRoundRect(r, 16f, 16f, pFondo)
         val marcado = seleccionado && editar
         pBorde.color = if (marcado) Estilo.AZUL else Estilo.BORDE
@@ -60,7 +57,8 @@ class Pad(context: Context, val diatonico: Boolean, val indice: Int, private val
 /**
  * Pestana ACORDES (vertical):
  *  arriba 8 cuadros: los 7 acordes de la tonalidad + el I una octava arriba;
- *  abajo 12 cuadros libres (escritos en el mini piano, de la lista o aleatorios).
+ *  abajo 12 cuadros libres (elegidos con botones de raiz y tipo, o aleatorios).
+ *  Color = mapa de calor de tension respecto a la tonalidad (la tonica en azul).
  *  EDITAR: los cuadros se achican y abajo aparecen las opciones del cuadro elegido.
  *  Solo usa la VEL general (sin humanize).
  */
@@ -79,7 +77,7 @@ class PaginaAcordes(
     private var transp = prefs.getInt("ac_transp", 0)
     private var editar = false
     val reproductor = Reproductor(midi, prefs) { interp.velBase }
-    private var piano = false
+    private var elegir = false
     private val ajD = Array(N_DIAT) { Ajustes.leer(prefs.getString("ac_d$it", null)) }
     private val ajL = Array(N_LIBRES) { Ajustes.leer(prefs.getString("ac_la$it", null)) }
     private val libres = Array(N_LIBRES) { Libre.leer(prefs.getString("ac_l$it", null)) }
@@ -90,7 +88,7 @@ class PaginaAcordes(
 
     private val zona: LinearLayout
     private val panel: LinearLayout
-    private val panelPiano: LinearLayout
+    private val panelElegir: LinearLayout
     private lateinit var bTonica: Boton
     private lateinit var bEscala: Boton
     private lateinit var bOct: Boton
@@ -101,9 +99,11 @@ class PaginaAcordes(
     private lateinit var b11: Boton; private lateinit var b13: Boton
     private lateinit var bS2: Boton; private lateinit var bS4: Boton; private lateinit var bB5: Boton; private lateinit var bA5: Boton
     private lateinit var bBajo: Boton; private lateinit var bBajoOct: Boton
-    private lateinit var bEscribir: Boton; private lateinit var bLista: Boton; private lateinit var bAzar: Boton; private lateinit var bBorrar: Boton
-    private lateinit var mini: MiniPiano
-    private lateinit var miniTitulo: Boton
+    private lateinit var bElegir: Boton; private lateinit var bAzar: Boton; private lateinit var bBorrar: Boton
+    private lateinit var bOctAc: Boton
+    private lateinit var elTitulo: Boton
+    private val bRaiz = ArrayList<Boton>()
+    private val bTipo = ArrayList<Boton>()
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun escala7(): IntArray = Escalas.escala(escala).intervalos
@@ -162,9 +162,13 @@ class PaginaAcordes(
         ft.addView(pTitulo, LayoutParams(0, MATCH, 3f)); ft.addView(bReset, LayoutParams(0, MATCH, 0.8f))
         panel.addView(ft, LayoutParams(MATCH, 0, 1f))
         val fi = fila()
-        for ((k, t) in listOf("FUND.", "1ª INV", "2ª INV", "3ª INV").withIndex()) {
+        for ((k, t) in listOf("FUND.", "1ª", "2ª", "3ª").withIndex()) {
             val b = boton(t) { fijarInv(k) }; bInv.add(b); fi.addView(b, LayoutParams(0, MATCH, 1f))
         }
+        fi.addView(boton("OCT −") { octavaAcorde(-1) }, LayoutParams(0, MATCH, 1.1f))
+        bOctAc = Boton(ctx, "") { }.apply { soloTexto = true; tamTexto = 20f }
+        fi.addView(bOctAc, LayoutParams(0, MATCH, 0.8f))
+        fi.addView(boton("OCT +") { octavaAcorde(1) }, LayoutParams(0, MATCH, 1.1f))
         panel.addView(fi, LayoutParams(MATCH, 0, 1f))
         val fx = fila()
         b7 = boton("+7ª") { cambiar { it.siete = !it.siete; if (!it.siete && it.inv > 2) it.inv = 2 } }
@@ -190,43 +194,41 @@ class PaginaAcordes(
         fb.addView(bBajoOct, LayoutParams(0, MATCH, 0.8f)); fb.addView(bOp, LayoutParams(0, MATCH, 0.8f))
         panel.addView(fb, LayoutParams(MATCH, 0, 1f))
         val fl = fila()
-        bEscribir = boton("ESCRIBIR") { abrirPiano() }
-        bLista = boton("LISTA") { escribirLista() }
+        bElegir = boton("ELEGIR ACORDE") { abrirElegir() }
         bAzar = boton("ALEATORIO") { azar() }
         bBorrar = boton("BORRAR") { borrar() }
-        for (b in listOf(bEscribir, bLista, bAzar, bBorrar)) fl.addView(b, LayoutParams(0, MATCH, 1f))
+        fl.addView(bElegir, LayoutParams(0, MATCH, 1.6f))
+        for (b in listOf(bAzar, bBorrar)) fl.addView(b, LayoutParams(0, MATCH, 1f))
         panel.addView(fl, LayoutParams(MATCH, 0, 1f))
         addView(panel, LayoutParams(MATCH, 0, 0f))
 
-        // ---- panel MINI PIANO (escribir tocando)
-        panelPiano = LinearLayout(ctx).apply { orientation = VERTICAL; visibility = GONE; setPadding(0, 6, 0, 0) }
-        miniTitulo = Boton(ctx, "") { }.apply { soloTexto = true; tamTexto = 28f }
-        panelPiano.addView(miniTitulo, LayoutParams(MATCH, dp(44)))
-        mini = MiniPiano(ctx, midi, { interp.velBase }) { actualizarMini() }
-        mini.primeraBlanca = prefs.getInt("ac_mini", 28)
-        panelPiano.addView(mini, LayoutParams(MATCH, 0, 1f))
-        val fm = fila()
-        val mIzq = Repetir(ctx, "◀") { mini.primeraBlanca -= 1; prefs.edit().putInt("ac_mini", mini.primeraBlanca).apply() }.apply { tamTexto = 24f }
-        val mDer = Repetir(ctx, "▶") { mini.primeraBlanca += 1; prefs.edit().putInt("ac_mini", mini.primeraBlanca).apply() }.apply { tamTexto = 24f }
-        val oir = object : Boton(ctx, "OÍR") {
-            init { tamTexto = 20f }
-            @SuppressLint("ClickableViewAccessibility")
-            override fun onTouchEvent(e: MotionEvent): Boolean {
-                when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { activo = true; for (n in mini.marcadas) midi.notaOn(n, interp.velBase) }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { activo = false; for (n in mini.marcadas) midi.notaOff(n) }
-                }
-                return true
+        // ---- panel ELEGIR ACORDE (raiz + tipo con botones)
+        panelElegir = LinearLayout(ctx).apply { orientation = VERTICAL; visibility = GONE; setPadding(0, 6, 0, 0) }
+        val fe = fila().apply { gravity = Gravity.CENTER_VERTICAL }
+        elTitulo = Boton(ctx, "") { }.apply { soloTexto = true; tamTexto = 28f }
+        fe.addView(elTitulo, LayoutParams(0, MATCH, 3f))
+        fe.addView(boton("LISTO") { cerrarElegir() }.apply { colorActivo = Estilo.VERDE; activo = true }, LayoutParams(0, MATCH, 1f))
+        panelElegir.addView(fe, LayoutParams(MATCH, 0, 1f))
+        for (fil in 0 until 2) {
+            val f = fila()
+            for (col in 0 until 6) {
+                val r = fil * 6 + col
+                val b = boton("") { elegirRaiz(r) }.apply { tamTexto = 22f; colorActivo = 0xFFF0B97E.toInt() }
+                bRaiz.add(b); f.addView(b, LayoutParams(0, MATCH, 1f))
             }
+            panelElegir.addView(f, LayoutParams(MATCH, 0, 1f))
         }
-        val mLimpiar = boton("LIMPIAR") { mini.marcadas.clear(); mini.invalidate(); actualizarMini() }
-        val mCancelar = boton("CANCELAR") { cerrarPiano() }
-        val mGuardar = boton("GUARDAR") { guardarPiano() }.apply { colorActivo = Estilo.VERDE; activo = true }
-        fm.addView(mIzq, LayoutParams(0, MATCH, 0.5f)); fm.addView(mDer, LayoutParams(0, MATCH, 0.5f))
-        fm.addView(oir, LayoutParams(0, MATCH, 0.7f)); fm.addView(mLimpiar, LayoutParams(0, MATCH, 0.9f))
-        fm.addView(mCancelar, LayoutParams(0, MATCH, 1f)); fm.addView(mGuardar, LayoutParams(0, MATCH, 1f))
-        panelPiano.addView(fm, LayoutParams(MATCH, dp(46)))
-        addView(panelPiano, LayoutParams(MATCH, 0, 0f))
+        val cortos = arrayOf("Mayor", "menor", "dim", "aum", "sus2", "sus4", "7", "maj7", "m7", "m7b5", "dim7", "m(maj7)", "6", "m6", "7sus4")
+        for (fil in 0 until 3) {
+            val f = fila()
+            for (col in 0 until 5) {
+                val t = fil * 5 + col
+                val b = boton(cortos[t]) { elegirTipo(t) }.apply { tamTexto = 20f }
+                bTipo.add(b); f.addView(b, LayoutParams(0, MATCH, 1f))
+            }
+            panelElegir.addView(f, LayoutParams(MATCH, 0, 1f))
+        }
+        addView(panelElegir, LayoutParams(MATCH, 0, 0f))
 
         refrescar()
     }
@@ -273,11 +275,13 @@ class PaginaAcordes(
         for (p in pads) {
             val f = forma(p)
             p.titulo = nombreDe(p)
+            val ns = notasDe(p)
+            val an = if (f != null && ns != null) Analisis.analizar(ns, if (f.exactas.isNotEmpty()) -1 else raizEff(f), tonEff(), escala) else null
+            p.colorFondo = if (an != null) Analisis.color(an) else 0xFF1E2024.toInt()
             p.sub = when {
                 p.diatonico -> (if (p.indice == 7) "I · 8ª" else grados[p.indice]) + " · " + Escalas.nombreNota(raizEff(f!!), tonEff(), escala)
-                f == null -> if (editar) "vacío" else "toca: escribir"
-                f.exactas.isNotEmpty() -> "tocado"
-                else -> Escalas.nombreNota(raizEff(f), tonEff(), escala)
+                f == null -> if (editar) "vacío" else "toca: elegir"
+                else -> an!!.grado
             }
             p.editar = editar
             p.seleccionado = p == sel
@@ -290,11 +294,11 @@ class PaginaAcordes(
         bOct.texto = "OCTAVA\nC$octava"; bOct.invalidate()
         bEditar.activo = editar
         // tamanos: con EDITAR los cuadros ocupan 2/3 y el panel 1/3
-        (zona.layoutParams as LayoutParams).weight = if (editar) (if (piano) 1.1f else 2f) else 1f
-        panel.visibility = if (editar && !piano) VISIBLE else GONE
-        (panel.layoutParams as LayoutParams).weight = if (editar && !piano) 1f else 0f
-        panelPiano.visibility = if (editar && piano) VISIBLE else GONE
-        (panelPiano.layoutParams as LayoutParams).weight = if (editar && piano) 1f else 0f
+        (zona.layoutParams as LayoutParams).weight = if (editar) 2f else 1f
+        panel.visibility = if (editar && !elegir) VISIBLE else GONE
+        (panel.layoutParams as LayoutParams).weight = if (editar && !elegir) 1f else 0f
+        panelElegir.visibility = if (editar && elegir) VISIBLE else GONE
+        (panelElegir.layoutParams as LayoutParams).weight = if (editar && elegir) 1.1f else 0f
         requestLayout()
         refrescarPanel()
     }
@@ -328,7 +332,10 @@ class PaginaAcordes(
         }
         bBajoOct.invalidate()
         val libre = p != null && !p.diatonico
-        for (b in listOf(bEscribir, bLista, bAzar, bBorrar)) { b.alpha = if (libre) 1f else 0.3f; b.invalidate() }
+        for (b in listOf(bElegir, bAzar, bBorrar)) { b.alpha = if (libre) 1f else 0.3f; b.invalidate() }
+        val oc = a?.oct ?: 0
+        bOctAc.texto = "OCT\n" + (if (oc > 0) "+" else "") + oc; bOctAc.invalidate()
+        refrescarElegir()
     }
 
     /** cambiar la transposicion (desde el menu lateral) */
@@ -356,7 +363,8 @@ class PaginaAcordes(
     private fun tocar(p: Pad, abajo: Boolean) {
         if (editar) {
             if (abajo) {
-                if (piano) return
+                if (elegir && !p.diatonico) { sel = p; refrescar() }
+                if (elegir) return
                 sel = p; refrescar()
                 // en EDITAR el cuadro suena mientras lo tocas, para oir el cambio
                 notasDe(p)?.let { ns -> for (n in ns) midi.notaOn(n, interp.velBase); notasDe[p] = ns }
@@ -365,7 +373,7 @@ class PaginaAcordes(
         }
         if (abajo) {
             val ns = notasDe(p)
-            if (ns == null) { sel = p; editar = true; refrescar(); abrirPiano(); return }
+            if (ns == null) { sel = p; editar = true; abrirElegir(); return }
             reproductor.abajo(p, ns)
         } else {
             reproductor.arriba(p)
@@ -386,7 +394,7 @@ class PaginaAcordes(
     }
 
     // ------------------------------------------------------------ acciones
-    private fun alternarEditar() { soltarTodo(); editar = !editar; piano = false; refrescar() }
+    private fun alternarEditar() { soltarTodo(); editar = !editar; elegir = false; refrescar() }
 
     private fun cambiarOctava(d: Int) { soltarTodo(); octava = (octava + d).coerceIn(0, 7); guardar(); refrescar() }
 
@@ -444,47 +452,66 @@ class PaginaAcordes(
         }
     }
 
-    private fun escribirLista() {
+    // ---- ELEGIR ACORDE con botones
+    private fun abrirElegir() {
         val p = sel ?: return
         if (p.diatonico) return
-        val raices = Array(12) { Escalas.nombreNota(it, tonica, escala) + "  (" + Acordes.letra(it, bemoles()) + ")" }
-        act.dialogo("Raíz del acorde", raices, libres[p.indice].raiz) { r ->
-            val tipos = Array(Acordes.TIPOS.size) { Acordes.TIPOS[it].nombre }
-            act.dialogo("Tipo de acorde", tipos, libres[p.indice].tipo) { t ->
-                libres[p.indice] = Libre(r, t); ajL[p.indice] = Ajustes()
-                guardar(); refrescar()
-            }
-        }
+        soltarTodo(); elegir = true; refrescar()
     }
 
-    private fun abrirPiano() {
+    private fun cerrarElegir() { elegir = false; refrescar() }
+
+    private fun refrescarElegir() {
+        if (!elegir) return
+        val p = sel
+        val l = if (p != null && !p.diatonico) libres[p.indice] else null
+        elTitulo.texto = when {
+            p == null || p.diatonico -> "Toca un cuadro libre"
+            l == null || l.vacio -> "Libre ${p.indice + 1}: elige raíz y tipo"
+            else -> "Libre ${p.indice + 1}:  " + nombreDe(p)
+        }
+        elTitulo.invalidate()
+        bRaiz.forEachIndexed { r, b ->
+            // los botones muestran las notas que suenan (con transposicion)
+            b.texto = Escalas.nombreNota((r + transp + 120) % 12, tonEff(), escala)
+            b.activo = l != null && !l.exacto && l.raiz == r
+            b.invalidate()
+        }
+        bTipo.forEachIndexed { t, b -> b.activo = l != null && !l.exacto && !l.vacio && l.tipo == t; b.invalidate() }
+    }
+
+    private fun elegirRaiz(r: Int) {
         val p = sel ?: return
         if (p.diatonico) return
-        soltarTodo()
-        mini.marcadas.clear()
-        notasDe(p)?.let { mini.marcadas.addAll(it) }
-        piano = true; refrescar(); actualizarMini()
+        val l = libres[p.indice]
+        val tipo = if (l.vacio || l.exacto) 0 else l.tipo
+        libres[p.indice] = Libre(r, tipo)
+        if (l.vacio || l.exacto) ajL[p.indice] = Ajustes()
+        guardar(); refrescar(); escuchar(p)
     }
 
-    private fun actualizarMini() {
-        val ns = mini.marcadas.toList()
-        miniTitulo.texto = if (ns.isEmpty()) "Toca las notas del acorde" else
-            Acordes.nombre(ns, -1, bemoles()) + "   ·   " + ns.joinToString(" ") { Acordes.nombreMidi(it, bemoles()) }
-        miniTitulo.invalidate()
-    }
-
-    private fun cerrarPiano() { piano = false; refrescar() }
-
-    private fun guardarPiano() {
+    private fun elegirTipo(t: Int) {
         val p = sel ?: return
-        if (mini.marcadas.isNotEmpty()) {
-            // se guarda "en C3": asi sigue a la OCTAVA general
-            val mover = (octavaDe(p) - Acordes.OCT_REF) * 12 + transp
-            libres[p.indice] = Libre(notas = mini.marcadas.map { it - mover })
-            ajL[p.indice] = Ajustes()
-            guardar()
-        }
-        cerrarPiano()
+        if (p.diatonico) return
+        val l = libres[p.indice]
+        val raiz = if (l.vacio || l.exacto) 0 else l.raiz
+        libres[p.indice] = Libre(raiz, t)
+        val a = ajL[p.indice]; if (a.inv >= Acordes.TIPOS[t].intervalos.size) a.inv = 0
+        guardar(); refrescar(); escuchar(p)
+    }
+
+    /** suena el acorde medio segundo (para oir lo que elegiste) */
+    private fun escuchar(p: Pad) {
+        val ns = notasDe(p) ?: return
+        for (n in ns) midi.notaOn(n, interp.velBase)
+        postDelayed({ for (n in ns) midi.notaOff(n) }, 550)
+    }
+
+    private fun octavaAcorde(d: Int) {
+        val p = sel ?: return
+        forma(p) ?: return
+        val a = aj(p); a.oct = (a.oct + d).coerceIn(-2, 2)
+        guardar(); refrescar(); escuchar(p)
     }
 
     private fun azar() {

@@ -14,8 +14,9 @@ class Ajustes(
     var trece: Boolean = false,
     var sus: Int = 0,           // 0, 2 (sus2) o 4 (sus4)
     var quinta: Int = 0,        // 0, -1 (b5) o +1 (#5)
+    var oct: Int = 0,           // mover este acorde de octava (-2..+2)
 ) {
-    fun guardar() = listOf(inv, b(siete), b(nueve), bajo, bajoOct, b(seis), b(once), b(trece), sus, quinta).joinToString(",")
+    fun guardar() = listOf(inv, b(siete), b(nueve), bajo, bajoOct, b(seis), b(once), b(trece), sus, quinta, oct).joinToString(",")
     private fun b(x: Boolean) = if (x) 1 else 0
     fun copia() = leer(guardar())
     companion object {
@@ -28,6 +29,7 @@ class Ajustes(
                     a.bajoOct = p[4].toInt(); a.seis = p[5] == "1"; a.once = p[6] == "1"; a.trece = p[7] == "1"
                     a.sus = p[8].toInt(); a.quinta = p[9].toInt()
                 }
+                if (p.size >= 11) a.oct = p[10].toInt()
             } catch (_: Exception) { }
             return a
         }
@@ -133,12 +135,12 @@ object Acordes {
             else { b = 12 * (octava + 1) + a.bajo; while (b > low - 5) b -= 12 }
             v.add(b)
         }
-        return v.filter { it in 0..127 }.distinct().sorted()
+        return v.map { it + 12 * a.oct }.filter { it in 0..127 }.distinct().sorted()
     }
 
     /** octava automatica del bajo (para mostrarla y como punto de partida) */
     fun bajoAuto(f: Forma, a: Ajustes, octava: Int): Int {
-        val sinBajo = notas(f, a.copia().also { it.bajo = -1 }, octava)
+        val sinBajo = notas(f, a.copia().also { it.bajo = -1; it.oct = 0 }, octava)
         val low = sinBajo.minOrNull() ?: 48
         var b = 12 * (octava + 1) + a.bajo.coerceAtLeast(0)
         while (b > low - 5) b -= 12
@@ -234,7 +236,7 @@ object Acordes {
         return s
     }
 
-    private fun adivinarRaiz(pcs: Set<Int>, grave: Int): Int {
+    fun adivinarRaiz(pcs: Set<Int>, grave: Int): Int {
         var mejor = grave; var puntos = -999
         for (c in pcs) {
             val rel = pcs.map { ((it - c) % 12 + 12) % 12 }.toSet()
