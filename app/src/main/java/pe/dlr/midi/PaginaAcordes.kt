@@ -76,7 +76,9 @@ class PaginaAcordes(
     private var tonica = prefs.getInt("ac_tonica", 0)
     private var escala = prefs.getInt("ac_escala", 0)
     private var octava = prefs.getInt("ac_octava", 3)
+    private var transp = prefs.getInt("ac_transp", 0)
     private var editar = false
+    val reproductor = Reproductor(midi, prefs) { interp.velBase }
     private var piano = false
     private val ajD = Array(N_DIAT) { Ajustes.leer(prefs.getString("ac_d$it", null)) }
     private val ajL = Array(N_LIBRES) { Ajustes.leer(prefs.getString("ac_la$it", null)) }
@@ -105,7 +107,9 @@ class PaginaAcordes(
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun escala7(): IntArray = Escalas.escala(escala).intervalos
-    private fun bemoles() = Escalas.usaBemoles(tonica, escala)
+    /** tonalidad que suena (con la transposicion) */
+    private fun tonEff() = ((tonica + transp) % 12 + 12) % 12
+    private fun bemoles() = Escalas.usaBemoles(tonEff(), escala)
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
     private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
@@ -249,15 +253,19 @@ class PaginaAcordes(
 
     private fun octavaDe(p: Pad) = if (p.diatonico && p.indice == 7) octava + 1 else octava
 
-    private fun notasDe(p: Pad): List<Int>? { val f = forma(p) ?: return null; return Acordes.notas(f, aj(p), octavaDe(p)) }
+    private fun notasDe(p: Pad): List<Int>? {
+        val f = forma(p) ?: return null
+        return Acordes.notas(f, aj(p), octavaDe(p)).map { it + transp }.filter { it in 0..127 }
+    }
+    private fun raizEff(f: Acordes.Forma) = ((f.raiz + transp) % 12 + 12) % 12
 
     private fun bemolesDe(p: Pad, f: Acordes.Forma) =
-        if (p.diatonico) bemoles() else if (f.exactas.isNotEmpty()) bemoles() else Acordes.bemolesPara(f.raiz, tonica, escala)
+        if (p.diatonico) bemoles() else if (f.exactas.isNotEmpty()) bemoles() else Acordes.bemolesPara(raizEff(f), tonEff(), escala)
 
     private fun nombreDe(p: Pad): String {
         val f = forma(p) ?: return "+"
-        val n = Acordes.notas(f, aj(p), octavaDe(p))
-        return Acordes.nombre(n, if (f.exactas.isNotEmpty()) -1 else f.raiz, bemolesDe(p, f))
+        val n = notasDe(p) ?: return "+"
+        return Acordes.nombre(n, if (f.exactas.isNotEmpty()) -1 else raizEff(f), bemolesDe(p, f))
     }
 
     private fun refrescar() {
@@ -266,16 +274,18 @@ class PaginaAcordes(
             val f = forma(p)
             p.titulo = nombreDe(p)
             p.sub = when {
-                p.diatonico -> (if (p.indice == 7) "I · 8ª" else grados[p.indice]) + " · " + Escalas.nombreNota(f!!.raiz, tonica, escala)
+                p.diatonico -> (if (p.indice == 7) "I · 8ª" else grados[p.indice]) + " · " + Escalas.nombreNota(raizEff(f!!), tonEff(), escala)
                 f == null -> if (editar) "vacío" else "toca: escribir"
                 f.exactas.isNotEmpty() -> "tocado"
-                else -> Escalas.nombreNota(f.raiz, tonica, escala)
+                else -> Escalas.nombreNota(raizEff(f), tonEff(), escala)
             }
             p.editar = editar
             p.seleccionado = p == sel
+            p.sonando = reproductor.estaSonando(p)
             p.invalidate()
         }
-        bTonica.texto = Escalas.nombreNota(tonica, tonica, escala); bTonica.invalidate()
+        bTonica.texto = Escalas.nombreNota(tonEff(), tonEff(), escala) + if (transp != 0) "\n" + (if (transp > 0) "+" else "") + transp + " st" else ""
+        bTonica.invalidate()
         bEscala.texto = Escalas.escala(escala).nombre.uppercase(); bEscala.invalidate()
         bOct.texto = "OCTAVA\nC$octava"; bOct.invalidate()
         bEditar.activo = editar
@@ -310,16 +320,28 @@ class PaginaAcordes(
         tog(bS2, a?.sus == 2, armable); tog(bS4, a?.sus == 4, armable)
         tog(bB5, a?.quinta == -1, armable); tog(bA5, a?.quinta == 1, armable)
         val conBajo = a != null && a.bajo >= 0
-        bBajo.texto = if (!conBajo) "BAJO: normal" else "BAJO: " + Escalas.nombreNota(a!!.bajo, tonica, escala)
+        bBajo.texto = if (!conBajo) "BAJO: normal" else "BAJO: " + Escalas.nombreNota((a!!.bajo + transp + 120) % 12, tonEff(), escala)
         bBajo.activo = conBajo; bBajo.invalidate()
         bBajoOct.texto = if (!conBajo || f == null) "—" else {
             val o = if (a!!.bajoOct >= 0) a.bajoOct + octavaDe(p!!) - Acordes.OCT_REF else Acordes.bajoAuto(f, a, octavaDe(p))
-            Acordes.letra(a.bajo, bemoles()) + o + if (a.bajoOct < 0) "\nauto" else ""
+            Acordes.letra(a.bajo + transp + 120, bemoles()) + o + if (a.bajoOct < 0) "\nauto" else ""
         }
         bBajoOct.invalidate()
         val libre = p != null && !p.diatonico
         for (b in listOf(bEscribir, bLista, bAzar, bBorrar)) { b.alpha = if (libre) 1f else 0.3f; b.invalidate() }
     }
+
+    /** cambiar la transposicion (desde el menu lateral) */
+    fun transponer(st: Int) {
+        soltarTodo()
+        transp = st.coerceIn(-12, 12)
+        prefs.edit().putInt("ac_transp", transp).apply()
+        refrescar()
+    }
+    fun transposicion() = transp
+
+    /** la forma de tocar cambio en el menu */
+    fun releerForma() { soltarTodo(); reproductor.leer() }
 
     fun guardar() {
         val e = prefs.edit()
@@ -344,14 +366,11 @@ class PaginaAcordes(
         if (abajo) {
             val ns = notasDe(p)
             if (ns == null) { sel = p; editar = true; refrescar(); abrirPiano(); return }
-            soltar(p)
-            for (n in ns) { if (conteo[n] > 0) midi.notaOff(n); midi.notaOn(n, interp.velBase); conteo[n]++ }
-            notasDe[p] = ns
-            p.sonando = true
+            reproductor.abajo(p, ns)
         } else {
-            soltar(p); p.sonando = false
+            reproductor.arriba(p)
         }
-        p.invalidate()
+        for (q in pads) { val s = reproductor.estaSonando(q); if (q.sonando != s) { q.sonando = s; q.invalidate() } }
     }
 
     private fun soltar(p: Pad) {
@@ -361,6 +380,7 @@ class PaginaAcordes(
     }
 
     fun soltarTodo() {
+        reproductor.pararTodo()
         for (p in pads) { soltar(p); p.sonando = false; p.invalidate() }
         for (n in 0..127) if (conteo[n] > 0) { conteo[n] = 0; midi.notaOff(n) }
     }
@@ -398,8 +418,10 @@ class PaginaAcordes(
 
     private fun elegirBajo() {
         val p = sel ?: return
-        val items = arrayOf("Normal (según la inversión)") + Array(12) { Escalas.nombreNota(it, tonica, escala) + "  (" + Acordes.letra(it, bemoles()) + ")" }
-        act.dialogo("Nota del bajo", items, aj(p).bajo + 1) { i -> aj(p).bajo = i - 1; guardar(); refrescar() }
+        // se elige en la tonalidad que suena (con transposicion) y se guarda sin ella
+        val items = arrayOf("Normal (según la inversión)") + Array(12) { Escalas.nombreNota(it, tonEff(), escala) + "  (" + Acordes.letra(it, bemoles()) + ")" }
+        val marcado = if (aj(p).bajo < 0) 0 else (aj(p).bajo + transp + 120) % 12 + 1
+        act.dialogo("Nota del bajo", items, marcado) { i -> aj(p).bajo = if (i == 0) -1 else ((i - 1 - transp) % 12 + 12) % 12; guardar(); refrescar() }
     }
 
     private fun octavaBajo(d: Int) {
@@ -457,7 +479,7 @@ class PaginaAcordes(
         val p = sel ?: return
         if (mini.marcadas.isNotEmpty()) {
             // se guarda "en C3": asi sigue a la OCTAVA general
-            val mover = (octavaDe(p) - Acordes.OCT_REF) * 12
+            val mover = (octavaDe(p) - Acordes.OCT_REF) * 12 + transp
             libres[p.indice] = Libre(notas = mini.marcadas.map { it - mover })
             ajL[p.indice] = Ajustes()
             guardar()

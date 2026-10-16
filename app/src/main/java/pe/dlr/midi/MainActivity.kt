@@ -109,7 +109,7 @@ class MainActivity : Activity(), MainActivityApi {
         marco.addView(raiz, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         velo = View(this).apply { setBackgroundColor(0x99000000.toInt()); visibility = View.GONE; setOnClickListener { cerrarMenu() } }
         marco.addView(velo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        menu = PanelPlantillas(this, prefs, { cerrarMenu() }) { nombre -> recargarCon(nombre) }
+        menu = PanelPlantillas(this, prefs, { cerrarMenu() }, { nombre -> recargarCon(nombre) }) { pagAcordes }
         menu.visibility = View.GONE
         marco.addView(menu, FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
         // que el gesto "atras" de Android no se coma el deslizamiento desde el borde derecho
@@ -336,7 +336,7 @@ class MainActivity : Activity(), MainActivityApi {
     // ------------------------------------------------------------ menu de TEMPLATES
     fun abrirMenu() {
         if (menu.visibility == View.VISIBLE) return
-        teclado.soltarTodo(); pagAcordes.soltarTodo()
+        teclado.soltarTodo()
         menu.refrescar()
         menu.visibility = View.VISIBLE; velo.visibility = View.VISIBLE
         menu.translationX = dp(340).toFloat()

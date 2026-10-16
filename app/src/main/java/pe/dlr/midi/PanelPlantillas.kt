@@ -17,7 +17,10 @@ class PanelPlantillas(
     private val prefs: SharedPreferences,
     private val alCerrar: () -> Unit,
     private val alCargar: (String) -> Unit,
+    private val acordes: () -> PaginaAcordes,
 ) : LinearLayout(act) {
+
+    private lateinit var tocar: PanelTocar
 
     private val lista = LinearLayout(act).apply { orientation = VERTICAL }
     private val abiertas = HashSet<String>().apply { add(Plantillas.FABRICA) }
@@ -29,16 +32,21 @@ class PanelPlantillas(
         setBackgroundColor(0xFF1B1C20.toInt())
         setPadding(dp(12), dp(10), dp(12), dp(10))
         val cab = LinearLayout(act).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        cab.addView(texto("TEMPLATES", 20f, Estilo.TEXTO, true), LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        cab.addView(texto("MENÚ", 20f, Estilo.TEXTO, true), LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val x = texto("✕", 24f, Estilo.TEXTO, false).apply { setPadding(dp(14), dp(4), dp(6), dp(4)); setOnClickListener { alCerrar() } }
         cab.addView(x, LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(cab, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val cuerpo = LinearLayout(act).apply { orientation = VERTICAL }
+        tocar = PanelTocar(act, prefs, acordes)
+        cuerpo.addView(tocar)
+        cuerpo.addView(texto("TEMPLATES", 17f, Estilo.TEXTO, true).apply { setPadding(dp(4), dp(10), 0, dp(4)) })
         val fb = LinearLayout(act).apply { orientation = HORIZONTAL; setPadding(0, dp(8), 0, dp(8)) }
         fb.addView(Boton(act, "GUARDAR ACTUAL") { pedirNombre() }.apply { tamTexto = 22f; colorActivo = Estilo.VERDE; activo = true },
             LayoutParams(0, dp(44), 1.3f))
         fb.addView(Boton(act, "+ CARPETA") { nuevaCarpeta(null) }.apply { tamTexto = 22f }, LayoutParams(0, dp(44), 1f))
-        addView(fb, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val sv = ScrollView(act); sv.addView(lista)
+        cuerpo.addView(fb, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        cuerpo.addView(lista)
+        val sv = ScrollView(act); sv.addView(cuerpo)
         addView(sv, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         addView(texto("Toca un template para cargarlo · mantén presionado para renombrar, mover o borrar", 12f, Estilo.TENUE, false),
             LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -51,6 +59,7 @@ class PanelPlantillas(
     }
 
     fun refrescar() {
+        tocar.refrescar()
         lista.removeAllViews()
         for (c in Plantillas.carpetas(act)) {
             val abierta = c in abiertas
