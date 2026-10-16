@@ -27,6 +27,10 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
     /** Canal MIDI global (1..16). */
     var canal = 1
 
+    /** sonido interno: tambien recibe todo lo que se manda */
+    var sinte: Sintetizador? = null
+    @Volatile var sonar = false
+
     val conectado: Boolean get() = port != null
 
     private val callback = object : MidiManager.DeviceCallback() {
@@ -81,6 +85,7 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
     }
 
     private fun enviar(a: Int, b: Int, c: Int, n: Int = 3) {
+        if (sonar) sinte?.midi(a and 0xFF, b and 0x7F, c and 0x7F)
         val p = port ?: return
         synchronized(buf) {
             buf[0] = a.toByte(); buf[1] = b.toByte(); buf[2] = c.toByte()

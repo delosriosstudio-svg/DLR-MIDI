@@ -17,6 +17,7 @@ class PanelTocar(
     private val variable = LinearLayout(act).apply { orientation = VERTICAL }
     private lateinit var bTransp: Boton
     private lateinit var bModo: Boton
+    private var bSonido: Boton? = null
 
     init {
         orientation = VERTICAL
@@ -37,6 +38,22 @@ class PanelTocar(
         fm.addView(bModo, LayoutParams(0, dp(44), 2.5f))
         addView(fm)
         addView(variable)
+        // ---- SONIDO interno
+        addView(titulo("SONIDO INTERNO"))
+        val fs = fila()
+        fs.addView(etiqueta("INSTRUMENTO"), LayoutParams(0, dp(44), 0.9f))
+        bSonido = Boton(act, "") {
+            act.dialogo("Sonido interno", Sintetizador.SONIDOS, prefs.getInt("sinte_sonido", 0)) { i -> act.ajustarSinte("sinte_sonido", i); refrescar() }
+        }.apply { tamTexto = 20f }
+        fs.addView(bSonido, LayoutParams(0, dp(44), 2.4f))
+        addView(fs)
+        val fv = fila()
+        val vol = Valor(act, "VOLUMEN", 0, 100, 80, { "$it %" }) { act.ajustarSinte("sinte_vol", it) }
+        vol.valor = prefs.getInt("sinte_vol", 80); vol.tamTexto = 20f
+        val rev = Valor(act, "REVERB", 0, 100, 25, { if (it == 0) "OFF" else "$it %" }) { act.ajustarSinte("sinte_rev", it) }
+        rev.valor = prefs.getInt("sinte_rev", 25); rev.tamTexto = 20f
+        fv.addView(vol, LayoutParams(0, dp(46), 1f)); fv.addView(rev, LayoutParams(0, dp(46), 1f))
+        addView(fv)
         refrescar()
     }
 
@@ -75,6 +92,7 @@ class PanelTocar(
         bTransp.texto = (if (st > 0) "+" else "") + st + " st"; bTransp.activo = st != 0; bTransp.invalidate()
         val modo = prefs.getInt("ac_modo", 0).coerceIn(0, Reproductor.MODOS.size - 1)
         bModo.texto = Reproductor.MODOS[modo]; bModo.activo = modo != 0; bModo.invalidate()
+        bSonido?.let { it.texto = Sintetizador.SONIDOS[prefs.getInt("sinte_sonido", 0).coerceIn(0, Sintetizador.SONIDOS.size - 1)]; it.invalidate() }
         variable.removeAllViews()
         when (modo) {
             1 -> variable.addView(valor("SEPARACIÓN (arrastra)", 0, 80, 0, "ac_sep") { if (it == 0) "AUTO" else "$it ms" })

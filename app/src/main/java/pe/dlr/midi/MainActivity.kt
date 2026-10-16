@@ -48,6 +48,10 @@ class MainActivity : Activity(), MainActivityApi {
     private lateinit var velo: View
     private lateinit var menu: PanelPlantillas
     private var cargando = false
+    val sinte = Sintetizador()
+    private var estadoMidi = ""
+    private lateinit var btnSonido: Boton
+    private var enPantalla = false
     private var bordeX = -1f
     private val faders = ArrayList<Fader>()
     private var pestana = 0
@@ -61,7 +65,11 @@ class MainActivity : Activity(), MainActivityApi {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         estado = Estado(this)
-        midi = Midi(this) { texto, ok -> estado.fijar(texto, ok) }
+        midi = Midi(this) { texto, ok -> estadoMidi = texto; estado.fijar(texto, ok); actualizarSonido() }
+        sinte.sonido = prefs.getInt("sinte_sonido", 0)
+        sinte.volumen = prefs.getInt("sinte_vol", 80) / 100f
+        sinte.reverb = prefs.getInt("sinte_rev", 25) / 100f
+        midi.sinte = sinte
         midi.canal = prefs.getInt("canal", 1)
         interp = Interprete(midi)
         interp.velBase = prefs.getInt("velBase", 100)
@@ -79,6 +87,7 @@ class MainActivity : Activity(), MainActivityApi {
         tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
         tabAcordes = Boton(this, "ACORDES") { mostrar(2) }.apply { tamTexto = 24f }
         val btnMenu = Boton(this, "☰") { abrirMenu() }.apply { tamTexto = 30f }
+        btnSonido = Boton(this, "") { ciclarSonido() }.apply { tamTexto = 20f; colorActivo = Estilo.VERDE }
         val vel = Valor(this, "VEL", 1, 127, 100, { "$it" }) { interp.velBase = it; prefs.edit().putInt("velBase", it).apply() }
         vel.valor = interp.velBase
         val hum = Valor(this, "HUMANIZE", 0, 100, 0, { if (it == 0) "OFF" else "$it %" }) { interp.humanize = it / 100f; prefs.edit().putInt("humanize", it).apply() }
@@ -91,6 +100,7 @@ class MainActivity : Activity(), MainActivityApi {
         barra.addView(tabTeclado, LinearLayout.LayoutParams(0, dp(34), 0.7f))
         barra.addView(tabAcordes, LinearLayout.LayoutParams(0, dp(34), 0.75f))
         barra.addView(tabFaders, LinearLayout.LayoutParams(0, dp(34), 0.7f))
+        barra.addView(btnSonido, LinearLayout.LayoutParams(0, dp(34), 0.55f))
         barra.addView(btnMenu, LinearLayout.LayoutParams(0, dp(34), 0.4f))
         raiz.addView(barra, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
@@ -312,7 +322,9 @@ class MainActivity : Activity(), MainActivityApi {
     override fun onResume() {
         super.onResume()
         pantallaCompleta()
+        enPantalla = true
         midi.iniciar()
+        actualizarSonido()
     }
 
     override fun onPause() {
@@ -321,6 +333,9 @@ class MainActivity : Activity(), MainActivityApi {
         sustain.reiniciar()
         if (!cargando) guardarEstado()
         midi.detener()
+        enPantalla = false
+        midi.sonar = false
+        sinte.apagar()
         super.onPause()
     }
 
@@ -331,6 +346,40 @@ class MainActivity : Activity(), MainActivityApi {
         faders.forEachIndexed { i, f -> e.putFloat("val$i", f.valor) }
         e.putFloat("valCCDedo", teclado.valorCC)
         e.apply()
+    }
+
+    // ------------------------------------------------------------ SONIDO interno
+    /** 0 = AUTO (suena si no hay cable), 1 = siempre, 2 = apagado */
+    private fun modoSonido() = prefs.getInt("sinte_modo", 0)
+
+    private fun ciclarSonido() {
+        val m = (modoSonido() + 1) % 3
+        prefs.edit().putInt("sinte_modo", m).apply()
+        actualizarSonido()
+        aviso(when (m) { 0 -> "Sonido interno: AUTO (suena sin cable)"; 1 -> "Sonido interno: SIEMPRE"; else -> "Sonido interno: APAGADO" })
+    }
+
+    fun actualizarSonido() {
+        if (!::btnSonido.isInitialized) return
+        val m = modoSonido()
+        val suena = enPantalla && (m == 1 || (m == 0 && !midi.conectado))
+        if (suena && !sinte.encendido) sinte.encender()
+        if (!suena && sinte.encendido) sinte.apagar()
+        midi.sonar = suena
+        btnSonido.texto = when (m) { 0 -> "🔊 AUTO"; 1 -> "🔊 ON"; else -> "🔇 OFF" }
+        btnSonido.activo = suena
+        btnSonido.invalidate()
+        if (suena && !midi.conectado) estado.fijar("Sin cable · sonido interno", true)
+        else if (estadoMidi.isNotEmpty()) estado.fijar(estadoMidi, midi.conectado)
+    }
+
+    fun ajustarSinte(clave: String, v: Int) {
+        prefs.edit().putInt(clave, v).apply()
+        when (clave) {
+            "sinte_sonido" -> sinte.sonido = v
+            "sinte_vol" -> sinte.volumen = v / 100f
+            "sinte_rev" -> sinte.reverb = v / 100f
+        }
     }
 
     // ------------------------------------------------------------ menu de TEMPLATES
