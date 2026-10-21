@@ -10,9 +10,10 @@ import android.os.Looper
 import java.io.IOException
 
 /**
- * Conexion MIDI por cable USB.
- * Con el telefono en modo USB "MIDI", Android crea un puerto USB y el Mac lo ve
- * como un teclado MIDI normal. Esta clase abre ese puerto y manda los mensajes.
+ * Conexion MIDI por cable USB o por Wi-Fi.
+ * - USB: con el telefono en modo USB "MIDI", el Mac lo ve como un teclado MIDI normal.
+ * - Wi-Fi: "Red MIDI" de Apple (ver Wifi.kt). Se usa solo cuando no hay cable,
+ *   para que REAPER no reciba cada nota dos veces.
  */
 class Midi(context: Context, private val alCambiar: (texto: String, conectado: Boolean) -> Unit) {
 
@@ -31,7 +32,22 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
     var sinte: Sintetizador? = null
     @Volatile var sonar = false
 
-    val conectado: Boolean get() = port != null
+    private val wifi = Wifi(context) { t, _ -> estadoWifi(t) }
+    private var textoUsb = ""
+
+    val conectado: Boolean get() = port != null || wifi.conectado
+    private val porUsb: Boolean get() = port != null
+
+    /** el estado que se muestra: el cable manda; si no hay cable, el Wi-Fi */
+    private fun informar() {
+        when {
+            porUsb -> alCambiar("Conectado por USB", true)
+            wifi.conectado -> alCambiar("Conectado por Wi-Fi · " + wifi.nombrePar, true)
+            else -> alCambiar(ultimoWifi ?: textoUsb, false)
+        }
+    }
+    private var ultimoWifi: String? = null
+    private fun estadoWifi(t: String?) { ultimoWifi = if (wifi.conectado) null else t; informar() }
 
     private val callback = object : MidiManager.DeviceCallback() {
         override fun onDeviceAdded(device: MidiDeviceInfo) { buscar() }
@@ -42,21 +58,24 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
     }
 
     fun iniciar() {
-        if (manager == null) { alCambiar("Este telefono no tiene MIDI", false); return }
+        if (manager == null) { alCambiar("Este telefono no tiene MIDI", false); wifi.iniciar(); return }
         manager.registerDeviceCallback(callback, handler)
         buscar()
+        wifi.iniciar()
     }
 
     fun detener() {
         manager?.unregisterDeviceCallback(callback)
         panico()
         cerrar()
+        wifi.detener()
     }
 
     private fun cerrar() {
         try { port?.close() } catch (_: IOException) {}
         try { device?.close() } catch (_: IOException) {}
         port = null; device = null; info = null
+        informar()
     }
 
     @Suppress("DEPRECATION")
@@ -65,7 +84,8 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
         if (port != null || abriendo) return
         val usb = m.devices.firstOrNull { it.type == MidiDeviceInfo.TYPE_USB && it.inputPortCount > 0 }
         if (usb == null) {
-            alCambiar("Sin conexion: conecta el cable y elige USB > MIDI", false)
+            textoUsb = "Sin conexion: cable USB > MIDI, o Red MIDI por Wi-Fi"
+            informar()
             return
         }
         abriendo = true
@@ -80,16 +100,48 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
                 return@openDevice
             }
             device = d; info = usb; port = p
-            alCambiar("Conectado por USB", true)
+            informar()
         }, handler)
     }
 
     private fun enviar(a: Int, b: Int, c: Int, n: Int = 3) {
         if (sonar) sinte?.midi(a and 0xFF, b and 0x7F, c and 0x7F)
-        val p = port ?: return
         synchronized(buf) {
             buf[0] = a.toByte(); buf[1] = b.toByte(); buf[2] = c.toByte()
-            try { p.send(buf, 0, n) } catch (_: IOException) { }
+            crudo(buf, n)
+        }
+    }
+
+    /** manda bytes tal cual por la conexion activa (USB si hay cable; si no, Wi-Fi) */
+    private fun crudo(b: ByteArray, n: Int) {
+        val p = port
+        if (p != null) { try { p.send(b, 0, n) } catch (_: IOException) { } }
+        else if (wifi.conectado) wifi.enviar(b, n)
+    }
+
+    /** cambio de preset del instrumento (1..128) en el canal de la app */
+    fun programa(numero: Int) {
+        synchronized(buf) {
+            buf[0] = (0xC0 or ch).toByte(); buf[1] = (numero - 1).coerceIn(0, 127).toByte()
+            crudo(buf, 2)
+        }
+    }
+
+    /** transporte: MMC (Play, Stop, Grabar, Inicio) */
+    fun mmc(orden: Int) {
+        val m = when (orden) {
+            0x44 -> byteArrayOf(0xF0.toByte(), 0x7F, 0x7F, 0x06, 0x44, 0x06, 0x01, 0, 0, 0, 0, 0, 0xF7.toByte())  // ir a 00:00:00:00
+            else -> byteArrayOf(0xF0.toByte(), 0x7F, 0x7F, 0x06, orden.toByte(), 0xF7.toByte())
+        }
+        crudo(m, m.size)
+    }
+
+    /** CC en un canal concreto (1..16), sin pasar por el sonido interno */
+    fun ccEnCanal(canalMidi: Int, numero: Int, valor: Int) {
+        val c = (canalMidi - 1).coerceIn(0, 15)
+        synchronized(buf) {
+            buf[0] = (0xB0 or c).toByte(); buf[1] = numero.coerceIn(0, 127).toByte(); buf[2] = valor.coerceIn(0, 127).toByte()
+            crudo(buf, 3)
         }
     }
 

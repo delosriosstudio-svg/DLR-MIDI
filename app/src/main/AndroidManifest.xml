@@ -3,6 +3,12 @@
 
     <uses-feature android:name="android.software.midi" android:required="true" />
 
+    <!-- MIDI por Wi-Fi (Red MIDI de Apple) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <application
         android:label="DLR MIDI"
         android:icon="@android:drawable/ic_media_play"

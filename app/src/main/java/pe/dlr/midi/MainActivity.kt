@@ -47,6 +47,8 @@ class MainActivity : Activity(), MainActivityApi {
     private lateinit var marco: FrameLayout
     private lateinit var velo: View
     private lateinit var menu: PanelPlantillas
+    private lateinit var transporte: PanelTransporte
+    private var bordeIzq = -1f
     private var cargando = false
     val sinte = Sintetizador()
     private var estadoMidi = ""
@@ -117,15 +119,21 @@ class MainActivity : Activity(), MainActivityApi {
         // ---- raiz con el menu lateral de TEMPLATES encima
         marco = FrameLayout(this)
         marco.addView(raiz, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        velo = View(this).apply { setBackgroundColor(0x99000000.toInt()); visibility = View.GONE; setOnClickListener { cerrarMenu() } }
+        velo = View(this).apply { setBackgroundColor(0x99000000.toInt()); visibility = View.GONE; setOnClickListener { cerrarMenu(); cerrarTransporte() } }
         marco.addView(velo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         menu = PanelPlantillas(this, prefs, { cerrarMenu() }, { nombre -> recargarCon(nombre) }) { pagAcordes }
         menu.visibility = View.GONE
         marco.addView(menu, FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
-        // que el gesto "atras" de Android no se coma el deslizamiento desde el borde derecho
+        // TRANSPORTE: se desliza desde el borde izquierdo
+        transporte = PanelTransporte(this, prefs, midi) { cerrarTransporte() }
+        transporte.visibility = View.GONE
+        marco.addView(transporte, FrameLayout.LayoutParams(dp(320), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
+        // que el gesto "atras" de Android no se coma el deslizamiento desde los bordes
         marco.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             val h = v.height; val w = v.width
-            v.systemGestureExclusionRects = listOf(android.graphics.Rect(w - dp(28), h / 2 - dp(100), w, h / 2 + dp(100)))
+            v.systemGestureExclusionRects = listOf(
+                android.graphics.Rect(w - dp(28), h / 2 - dp(100), w, h / 2 + dp(100)),
+                android.graphics.Rect(0, h / 2 - dp(100), dp(28), h / 2 + dp(100)))
         }
         setContentView(marco)
         actualizarCanal()
@@ -384,7 +392,7 @@ class MainActivity : Activity(), MainActivityApi {
 
     // ------------------------------------------------------------ menu de TEMPLATES
     fun abrirMenu() {
-        if (menu.visibility == View.VISIBLE) return
+        if (menu.visibility == View.VISIBLE || transporte.visibility == View.VISIBLE) return
         teclado.soltarTodo()
         menu.refrescar()
         menu.visibility = View.VISIBLE; velo.visibility = View.VISIBLE
@@ -395,11 +403,30 @@ class MainActivity : Activity(), MainActivityApi {
     fun cerrarMenu() {
         if (menu.visibility != View.VISIBLE) return
         menu.animate().translationX(dp(340).toFloat()).setDuration(160).withEndAction {
-            menu.visibility = View.GONE; velo.visibility = View.GONE
+            menu.visibility = View.GONE
+            if (transporte.visibility != View.VISIBLE) velo.visibility = View.GONE
         }.start()
     }
 
     fun aviso(t: String) = estado.fijarAviso(t)
+
+    // ------------------------------------------------------------ panel de TRANSPORTE (izquierda)
+    fun abrirTransporte() {
+        if (transporte.visibility == View.VISIBLE || menu.visibility == View.VISIBLE) return
+        teclado.soltarTodo()
+        transporte.actualizar()
+        transporte.visibility = View.VISIBLE; velo.visibility = View.VISIBLE
+        transporte.translationX = -dp(320).toFloat()
+        transporte.animate().translationX(0f).setDuration(180).start()
+    }
+
+    fun cerrarTransporte() {
+        if (transporte.visibility != View.VISIBLE) return
+        transporte.animate().translationX(-dp(320).toFloat()).setDuration(160).withEndAction {
+            transporte.visibility = View.GONE
+            if (menu.visibility != View.VISIBLE) velo.visibility = View.GONE
+        }.start()
+    }
 
     /** despues de cargar un template se reinicia la pantalla con los ajustes nuevos */
     private fun recargarCon(nombre: String) {
@@ -408,19 +435,28 @@ class MainActivity : Activity(), MainActivityApi {
         recreate()
     }
 
-    /** deslizar desde el borde derecho hacia la izquierda abre los TEMPLATES */
+    /** deslizar desde el borde derecho abre los TEMPLATES; desde el borde izquierdo, el TRANSPORTE */
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
-        if (menu.visibility != View.VISIBLE) {
+        if (menu.visibility != View.VISIBLE && transporte.visibility != View.VISIBLE) {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    bordeX = -1f; bordeIzq = -1f
                     if (e.x > marco.width - dp(22)) { bordeX = e.x; return true }
-                    bordeX = -1f
+                    if (e.x < dp(22)) { bordeIzq = e.x; return true }
                 }
-                MotionEvent.ACTION_MOVE -> if (bordeX >= 0f) {
-                    if (bordeX - e.x > dp(40)) { bordeX = -1f; abrirMenu() }
-                    return true
+                MotionEvent.ACTION_MOVE -> {
+                    if (bordeX >= 0f) {
+                        if (bordeX - e.x > dp(40)) { bordeX = -1f; abrirMenu() }
+                        return true
+                    }
+                    if (bordeIzq >= 0f) {
+                        if (e.x - bordeIzq > dp(40)) { bordeIzq = -1f; abrirTransporte() }
+                        return true
+                    }
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (bordeX >= 0f) { bordeX = -1f; return true }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (bordeX >= 0f || bordeIzq >= 0f) { bordeX = -1f; bordeIzq = -1f; return true }
+                }
             }
         }
         return super.dispatchTouchEvent(e)
