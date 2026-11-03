@@ -21,7 +21,9 @@ import android.widget.TextView
 
 /**
  * DLR MIDI — controlador MIDI para REAPER.
- * Pestanas: TECLADO (horizontal) y FADERS (vertical).
+ * Siempre horizontal. Columna izquierda fija: modos (TECLADO / ACORDES / FADERS) + transporte + Program Change.
+ * Panel izquierdo deslizable: AJUSTES (tonalidad, escala, bloqueo, canal, VEL, humanize, sonido).
+ * Panel derecho deslizable: acordes y TEMPLATES.
  */
 class MainActivity : Activity(), MainActivityApi {
 
@@ -47,7 +49,9 @@ class MainActivity : Activity(), MainActivityApi {
     private lateinit var marco: FrameLayout
     private lateinit var velo: View
     private lateinit var menu: PanelPlantillas
-    private lateinit var transporte: PanelTransporte
+    private lateinit var ajustes: PanelAjustes
+    private lateinit var btnPrograma: Boton
+    private var programa = 1
     private var bordeIzq = -1f
     private var cargando = false
     val sinte = Sintetizador()
@@ -60,6 +64,11 @@ class MainActivity : Activity(), MainActivityApi {
 
     private val COLORES = intArrayOf(Estilo.ACENTO, Estilo.AZUL, Estilo.VERDE, 0xFFC882E8.toInt())
     private val CC_DEFECTO = intArrayOf(1, 11, 7, 74)
+    private val CANAL_CC = 16
+    private val CC_PLAY = 115
+    private val CC_STOP = 116
+    private val CC_GRABAR = 117
+    private val CC_INICIO = 118
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,37 +86,55 @@ class MainActivity : Activity(), MainActivityApi {
         interp.velBase = prefs.getInt("velBase", 100)
         interp.humanize = prefs.getInt("humanize", 0) / 100f
 
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        programa = prefs.getInt("programa", 1).coerceIn(1, 128)
+
         val raiz = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Estilo.FONDO)
         }
 
-        // ---- barra superior: estado | canal | pestanas
-        val barra = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(12, 8, 12, 4) }
-        btnCanal = Boton(this, "") { elegirCanal() }.apply { tamTexto = 24f }
-        tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 24f }
-        tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
-        tabAcordes = Boton(this, "ACORDES") { mostrar(2) }.apply { tamTexto = 24f }
-        val btnMenu = Boton(this, "☰") { abrirMenu() }.apply { tamTexto = 30f }
+        // ---- botones de ajustes (viven en el panel izquierdo deslizable)
+        btnCanal = Boton(this, "") { elegirCanal() }.apply { tamTexto = 22f }
         btnSonido = Boton(this, "") { ciclarSonido() }.apply { tamTexto = 20f; colorActivo = Estilo.VERDE }
         val vel = Valor(this, "VEL", 1, 127, 100, { "$it" }) { interp.velBase = it; prefs.edit().putInt("velBase", it).apply() }
         vel.valor = interp.velBase
         val hum = Valor(this, "HUMANIZE", 0, 100, 0, { if (it == 0) "OFF" else "$it %" }) { interp.humanize = it / 100f; prefs.edit().putInt("humanize", it).apply() }
         hum.valor = (interp.humanize * 100f + 0.5f).toInt()
         vel.tamTexto = 20f; hum.tamTexto = 20f
-        barra.addView(estado, LinearLayout.LayoutParams(0, dp(34), 1.7f))
-        barra.addView(btnCanal, LinearLayout.LayoutParams(0, dp(34), 0.7f))
-        barra.addView(vel, LinearLayout.LayoutParams(0, dp(34), 0.55f))
-        barra.addView(hum, LinearLayout.LayoutParams(0, dp(34), 0.75f))
-        barra.addView(tabTeclado, LinearLayout.LayoutParams(0, dp(34), 0.7f))
-        barra.addView(tabAcordes, LinearLayout.LayoutParams(0, dp(34), 0.75f))
-        barra.addView(tabFaders, LinearLayout.LayoutParams(0, dp(34), 0.7f))
-        barra.addView(btnSonido, LinearLayout.LayoutParams(0, dp(34), 0.55f))
-        barra.addView(btnMenu, LinearLayout.LayoutParams(0, dp(34), 0.4f))
-        raiz.addView(barra, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // ---- columna izquierda fija: modos + transporte + program change
+        val columna = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(6), dp(6), dp(6)) }
+        fun fila(peso: Float, vararg items: Pair<View, Float>) {
+            val f = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            for ((v, w) in items) f.addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, w))
+            columna.addView(f, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, peso))
+        }
+        tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 24f }
+        tabAcordes = Boton(this, "ACORDES") { mostrar(2) }.apply { tamTexto = 24f }
+        tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
+        val btnAjustes = Boton(this, "⚙ AJUSTES") { abrirAjustes() }.apply { tamTexto = 20f }
+        val btnMenu = Boton(this, "☰") { abrirMenu() }.apply { tamTexto = 30f }
+        fila(0.5f, estado to 1f)
+        fila(0.8f, btnAjustes to 2f, btnMenu to 1f)
+        fila(1f, tabTeclado to 1f)
+        fila(1f, tabAcordes to 1f)
+        fila(1f, tabFaders to 1f)
+        fila(1f,
+            Boton(this, "⏮\nINICIO") { transporte(0x44, CC_INICIO, "Inicio") }.apply { tamTexto = 20f } to 1f,
+            Boton(this, "▶\nPLAY") { transporte(0x02, CC_PLAY, "Play") }.apply { tamTexto = 20f; colorActivo = Estilo.VERDE } to 1f)
+        fila(1f,
+            Boton(this, "■\nSTOP") { transporte(0x01, CC_STOP, "Stop") }.apply { tamTexto = 20f } to 1f,
+            Boton(this, "●\nGRABAR") { transporte(0x06, CC_GRABAR, "Grabar") }.apply { tamTexto = 20f; colorActivo = Estilo.ROJO } to 1f)
+        btnPrograma = Boton(this, "") { elegirPrograma() }.apply { tamTexto = 20f; colorActivo = Estilo.AZUL }
+        fila(1f,
+            Repetir(this, "◀") { moverPrograma(-1) }.apply { tamTexto = 26f } to 0.8f,
+            btnPrograma to 1.4f,
+            Repetir(this, "▶") { moverPrograma(1) }.apply { tamTexto = 26f } to 0.8f)
+        raiz.addView(columna, LinearLayout.LayoutParams(dp(190), ViewGroup.LayoutParams.MATCH_PARENT))
 
         contenido = FrameLayout(this)
-        raiz.addView(contenido, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        raiz.addView(contenido, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
 
         pagTeclado = crearPaginaTeclado()
         pagFaders = crearPaginaFaders()
@@ -119,15 +146,15 @@ class MainActivity : Activity(), MainActivityApi {
         // ---- raiz con el menu lateral de TEMPLATES encima
         marco = FrameLayout(this)
         marco.addView(raiz, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        velo = View(this).apply { setBackgroundColor(0x99000000.toInt()); visibility = View.GONE; setOnClickListener { cerrarMenu(); cerrarTransporte() } }
+        velo = View(this).apply { setBackgroundColor(0x99000000.toInt()); visibility = View.GONE; setOnClickListener { cerrarMenu(); cerrarAjustes() } }
         marco.addView(velo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         menu = PanelPlantillas(this, prefs, { cerrarMenu() }, { nombre -> recargarCon(nombre) }) { pagAcordes }
         menu.visibility = View.GONE
         marco.addView(menu, FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
-        // TRANSPORTE: se desliza desde el borde izquierdo
-        transporte = PanelTransporte(this, prefs, midi) { cerrarTransporte() }
-        transporte.visibility = View.GONE
-        marco.addView(transporte, FrameLayout.LayoutParams(dp(320), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
+        // AJUSTES: se desliza desde el borde izquierdo
+        ajustes = PanelAjustes(this, prefs, btnTonica, btnEscala, btnBloqueo, btnCanal, vel, hum, btnSonido) { cerrarAjustes() }
+        ajustes.visibility = View.GONE
+        marco.addView(ajustes, FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
         // que el gesto "atras" de Android no se coma el deslizamiento desde los bordes
         marco.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             val h = v.height; val w = v.width
@@ -137,6 +164,7 @@ class MainActivity : Activity(), MainActivityApi {
         }
         setContentView(marco)
         actualizarCanal()
+        actualizarPrograma()
         mostrar(prefs.getInt("pestana", 0))
     }
 
@@ -173,9 +201,7 @@ class MainActivity : Activity(), MainActivityApi {
         fun agregar(v: View, peso: Float, alto: Int = h) = fila.addView(v, LinearLayout.LayoutParams(0, alto, peso))
         agregar(menos, 0.5f); agregar(izq, 0.32f); agregar(etiquetaOct, 0.55f); agregar(der, 0.32f); agregar(mas, 0.5f)
         agregar(View(this), 0.12f)
-        agregar(btnTonica, 0.62f); agregar(btnEscala, 0.95f); agregar(btnBloqueo, 0.42f)
-        agregar(View(this), 0.12f)
-        agregar(btnCCDedo, 0.85f)
+        agregar(btnCCDedo, 1.1f)
         agregar(View(this), 0.12f)
         agregar(sustain, 1.4f, dp(52))
         pag.addView(fila, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -321,9 +347,6 @@ class MainActivity : Activity(), MainActivityApi {
         tabAcordes.activo = p == 2
         if (p != 0) teclado.soltarTodo()
         if (p != 2) pagAcordes.soltarTodo()
-        // teclado en horizontal; faders y acordes en vertical
-        requestedOrientation = if (p == 0) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                               else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
     }
 
     // ------------------------------------------------------------ ciclo de vida
@@ -392,7 +415,7 @@ class MainActivity : Activity(), MainActivityApi {
 
     // ------------------------------------------------------------ menu de TEMPLATES
     fun abrirMenu() {
-        if (menu.visibility == View.VISIBLE || transporte.visibility == View.VISIBLE) return
+        if (menu.visibility == View.VISIBLE || ajustes.visibility == View.VISIBLE) return
         teclado.soltarTodo()
         menu.refrescar()
         menu.visibility = View.VISIBLE; velo.visibility = View.VISIBLE
@@ -404,29 +427,58 @@ class MainActivity : Activity(), MainActivityApi {
         if (menu.visibility != View.VISIBLE) return
         menu.animate().translationX(dp(340).toFloat()).setDuration(160).withEndAction {
             menu.visibility = View.GONE
-            if (transporte.visibility != View.VISIBLE) velo.visibility = View.GONE
+            if (ajustes.visibility != View.VISIBLE) velo.visibility = View.GONE
         }.start()
     }
 
     fun aviso(t: String) = estado.fijarAviso(t)
 
-    // ------------------------------------------------------------ panel de TRANSPORTE (izquierda)
-    fun abrirTransporte() {
-        if (transporte.visibility == View.VISIBLE || menu.visibility == View.VISIBLE) return
+    // ------------------------------------------------------------ panel de AJUSTES (izquierda)
+    fun abrirAjustes() {
+        if (ajustes.visibility == View.VISIBLE || menu.visibility == View.VISIBLE) return
         teclado.soltarTodo()
-        transporte.actualizar()
-        transporte.visibility = View.VISIBLE; velo.visibility = View.VISIBLE
-        transporte.translationX = -dp(320).toFloat()
-        transporte.animate().translationX(0f).setDuration(180).start()
+        ajustes.actualizar()
+        ajustes.visibility = View.VISIBLE; velo.visibility = View.VISIBLE
+        ajustes.translationX = -dp(340).toFloat()
+        ajustes.animate().translationX(0f).setDuration(180).start()
     }
 
-    fun cerrarTransporte() {
-        if (transporte.visibility != View.VISIBLE) return
-        transporte.animate().translationX(-dp(320).toFloat()).setDuration(160).withEndAction {
-            transporte.visibility = View.GONE
+    fun cerrarAjustes() {
+        if (ajustes.visibility != View.VISIBLE) return
+        ajustes.animate().translationX(-dp(340).toFloat()).setDuration(160).withEndAction {
+            ajustes.visibility = View.GONE
             if (menu.visibility != View.VISIBLE) velo.visibility = View.GONE
         }.start()
     }
+
+    // ------------------------------------------------------------ TRANSPORTE y PROGRAM CHANGE (columna izquierda)
+    /** Manda MMC y ademas un CC en el canal 16 (para asignarlo en REAPER con "Learn") */
+    private fun transporte(mmc: Int, cc: Int, nombre: String) {
+        midi.mmc(mmc)
+        midi.ccEnCanal(CANAL_CC, cc, 127)
+        btnPrograma.postDelayed({ midi.ccEnCanal(CANAL_CC, cc, 0) }, 60)
+        aviso(if (midi.conectado) nombre else "$nombre (sin conexión)")
+    }
+
+    private fun moverPrograma(d: Int) {
+        val n = (programa + d).coerceIn(1, 128)
+        if (n == programa) return
+        programa = n
+        mandarPrograma()
+    }
+
+    private fun mandarPrograma() {
+        midi.programa(programa)
+        prefs.edit().putInt("programa", programa).apply()
+        actualizarPrograma()
+    }
+
+    private fun elegirPrograma() {
+        val items = Array(128) { "Preset ${it + 1}   (Program Change ${it})" }
+        dialogo("Preset (Program Change) · canal ${midi.canal}", items, programa - 1) { i -> programa = i + 1; mandarPrograma() }
+    }
+
+    private fun actualizarPrograma() { btnPrograma.texto = "PRESET\n$programa"; btnPrograma.invalidate() }
 
     /** despues de cargar un template se reinicia la pantalla con los ajustes nuevos */
     private fun recargarCon(nombre: String) {
@@ -435,14 +487,14 @@ class MainActivity : Activity(), MainActivityApi {
         recreate()
     }
 
-    /** deslizar desde el borde derecho abre los TEMPLATES; desde el borde izquierdo, el TRANSPORTE */
+    /** deslizar desde el borde derecho abre los TEMPLATES; desde el borde izquierdo, los AJUSTES */
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
-        if (menu.visibility != View.VISIBLE && transporte.visibility != View.VISIBLE) {
+        if (menu.visibility != View.VISIBLE && ajustes.visibility != View.VISIBLE) {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     bordeX = -1f; bordeIzq = -1f
                     if (e.x > marco.width - dp(22)) { bordeX = e.x; return true }
-                    if (e.x < dp(22)) { bordeIzq = e.x; return true }
+                    if (e.x < dp(16)) { bordeIzq = e.x; return true }
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (bordeX >= 0f) {
@@ -450,7 +502,7 @@ class MainActivity : Activity(), MainActivityApi {
                         return true
                     }
                     if (bordeIzq >= 0f) {
-                        if (e.x - bordeIzq > dp(40)) { bordeIzq = -1f; abrirTransporte() }
+                        if (e.x - bordeIzq > dp(40)) { bordeIzq = -1f; abrirAjustes() }
                         return true
                     }
                 }

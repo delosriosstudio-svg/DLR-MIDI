@@ -55,7 +55,7 @@ class Pad(context: Context, val diatonico: Boolean, val indice: Int, private val
 }
 
 /**
- * Pestana ACORDES (vertical):
+ * Pestana ACORDES (horizontal):
  *  arriba 8 cuadros: los 7 acordes de la tonalidad + el I una octava arriba;
  *  abajo 12 cuadros libres (elegidos con botones de raiz y tipo, o aleatorios).
  *  Color = mapa de calor de tension respecto a la tonalidad (la tonica en azul).
@@ -133,6 +133,10 @@ class PaginaAcordes(
         cab.addView(bEditar, LayoutParams(0, dp(38), 0.9f))
         addView(cab, LayoutParams(MATCH, WRAP))
 
+        // ---- cuerpo horizontal: cuadros a la izquierda; EDITAR / ELEGIR ACORDE a la derecha
+        val cuerpo = LinearLayout(ctx).apply { orientation = HORIZONTAL }
+        addView(cuerpo, LayoutParams(MATCH, 0, 1f))
+
         // ---- zona de cuadros: 2 filas x 4 (tonalidad) + 3 filas x 4 (libres)
         zona = LinearLayout(ctx).apply { orientation = VERTICAL }
         for (fil in 0 until 2) {
@@ -152,10 +156,10 @@ class PaginaAcordes(
             }
             zona.addView(f, LayoutParams(MATCH, 0, 1f))
         }
-        addView(zona, LayoutParams(MATCH, 0, 1f))
+        cuerpo.addView(zona, LayoutParams(0, MATCH, 1f))
 
-        // ---- panel EDITAR (un tercio de la pantalla)
-        panel = LinearLayout(ctx).apply { orientation = VERTICAL; visibility = GONE; setPadding(0, 6, 0, 0) }
+        // ---- panel EDITAR (a la derecha de los cuadros)
+        panel = LinearLayout(ctx).apply { orientation = VERTICAL; visibility = GONE; setPadding(8, 0, 0, 0) }
         val ft = fila().apply { gravity = Gravity.CENTER_VERTICAL }
         pTitulo = Boton(ctx, "") { }.apply { soloTexto = true; tamTexto = 26f }
         val bReset = Boton(ctx, "RESET") { confirmarReset() }.apply { tamTexto = 20f }
@@ -200,10 +204,10 @@ class PaginaAcordes(
         fl.addView(bElegir, LayoutParams(0, MATCH, 1.6f))
         for (b in listOf(bAzar, bBorrar)) fl.addView(b, LayoutParams(0, MATCH, 1f))
         panel.addView(fl, LayoutParams(MATCH, 0, 1f))
-        addView(panel, LayoutParams(MATCH, 0, 0f))
+        cuerpo.addView(panel, LayoutParams(0, MATCH, 0f))
 
         // ---- panel ELEGIR ACORDE (raiz + tipo con botones)
-        panelElegir = LinearLayout(ctx).apply { orientation = VERTICAL; visibility = GONE; setPadding(0, 6, 0, 0) }
+        panelElegir = LinearLayout(ctx).apply { orientation = VERTICAL; visibility = GONE; setPadding(8, 0, 0, 0) }
         val fe = fila().apply { gravity = Gravity.CENTER_VERTICAL }
         elTitulo = Boton(ctx, "") { }.apply { soloTexto = true; tamTexto = 28f }
         fe.addView(elTitulo, LayoutParams(0, MATCH, 3f))
@@ -228,7 +232,7 @@ class PaginaAcordes(
             }
             panelElegir.addView(f, LayoutParams(MATCH, 0, 1f))
         }
-        addView(panelElegir, LayoutParams(MATCH, 0, 0f))
+        cuerpo.addView(panelElegir, LayoutParams(0, MATCH, 0f))
 
         refrescar()
     }
@@ -293,8 +297,8 @@ class PaginaAcordes(
         bEscala.texto = Escalas.escala(escala).nombre.uppercase(); bEscala.invalidate()
         bOct.texto = "OCTAVA\nC$octava"; bOct.invalidate()
         bEditar.activo = editar
-        // tamanos: con EDITAR los cuadros ocupan 2/3 y el panel 1/3
-        (zona.layoutParams as LayoutParams).weight = if (editar) 2f else 1f
+        // tamanos: con EDITAR los cuadros ocupan la mitad izquierda y el panel la derecha
+        (zona.layoutParams as LayoutParams).weight = 1f
         panel.visibility = if (editar && !elegir) VISIBLE else GONE
         (panel.layoutParams as LayoutParams).weight = if (editar && !elegir) 1f else 0f
         panelElegir.visibility = if (editar && elegir) VISIBLE else GONE

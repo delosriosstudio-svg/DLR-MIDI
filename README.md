@@ -32,7 +32,12 @@ Usa la **Red MIDI de Apple** (RTP-MIDI), que el Mac ya trae. El teléfono y el M
 4. En REAPER: Preferences > Audio > MIDI Inputs > la sesión de red (ej. "Session 1") > **Enable input**.
 - Si el cable USB está conectado, se usa el cable (así REAPER no recibe cada nota dos veces).
 
-## Panel de TRANSPORTE (deslizar desde el borde izquierdo)
+## Pantalla (siempre horizontal)
+- **Columna izquierda fija**: modos **TECLADO · ACORDES · FADERS**, transporte (**INICIO · PLAY · STOP · GRABAR**) y **PRESET** ◀ ▶ (Program Change).
+- **Panel AJUSTES** (botón ⚙ AJUSTES o deslizar desde el borde izquierdo): tonalidad, escala, bloqueo de escala, canal MIDI, VEL, HUMANIZE y sonido interno (modo, instrumento, volumen, reverb).
+- **Panel derecho** (☰ o deslizar desde el borde derecho): opciones de ACORDES y TEMPLATES.
+
+## Transporte y Program Change (columna izquierda)
 - **PLAY · STOP · GRABAR · INICIO**: mandan **MMC** y además un **CC en el canal 16**
   (115 Play, 116 Stop, 117 Grabar, 118 Inicio).
   En REAPER: Actions > Show action list > elige la acción (ej. *Transport: Play*) > **Add…** > toca el botón en el teléfono.
