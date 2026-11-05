@@ -64,6 +64,7 @@ class MainActivity : Activity(), MainActivityApi {
 
     private val COLORES = intArrayOf(Estilo.ACENTO, Estilo.AZUL, Estilo.VERDE, 0xFFC882E8.toInt())
     private val CC_DEFECTO = intArrayOf(1, 11, 7, 74)
+    private val GROSOR_DEFECTO = 7
     private val CANAL_CC = 16
     private val CC_PLAY = 115
     private val CC_STOP = 116
@@ -102,36 +103,41 @@ class MainActivity : Activity(), MainActivityApi {
         val hum = Valor(this, "HUMANIZE", 0, 100, 0, { if (it == 0) "OFF" else "$it %" }) { interp.humanize = it / 100f; prefs.edit().putInt("humanize", it).apply() }
         hum.valor = (interp.humanize * 100f + 0.5f).toInt()
         vel.tamTexto = 20f; hum.tamTexto = 20f
+        val grosor = Valor(this, "GROSOR TECLAS", 1, 10, GROSOR_DEFECTO, { "$it" }) { g ->
+            prefs.edit().putInt("grosor", g).apply()
+            aplicarGrosor(g)
+        }
+        grosor.valor = prefs.getInt("grosor", GROSOR_DEFECTO); grosor.tamTexto = 20f
 
         // ---- columna izquierda fija: modos + transporte + program change
-        val columna = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(6), dp(6), dp(6)) }
+        val columna = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(4), dp(4), dp(4)) }
         fun fila(peso: Float, vararg items: Pair<View, Float>) {
             val f = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             for ((v, w) in items) f.addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, w))
             columna.addView(f, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, peso))
         }
-        tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 24f }
-        tabAcordes = Boton(this, "ACORDES") { mostrar(2) }.apply { tamTexto = 24f }
-        tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 24f }
-        val btnAjustes = Boton(this, "⚙ AJUSTES") { abrirAjustes() }.apply { tamTexto = 20f }
-        val btnMenu = Boton(this, "☰") { abrirMenu() }.apply { tamTexto = 30f }
-        fila(0.5f, estado to 1f)
-        fila(0.8f, btnAjustes to 2f, btnMenu to 1f)
+        tabTeclado = Boton(this, "TECLADO") { mostrar(0) }.apply { tamTexto = 19f }
+        tabAcordes = Boton(this, "ACORDES") { mostrar(2) }.apply { tamTexto = 19f }
+        tabFaders = Boton(this, "FADERS") { mostrar(1) }.apply { tamTexto = 19f }
+        val btnAjustes = Boton(this, "⚙ AJUSTES") { abrirAjustes() }.apply { tamTexto = 17f }
+        val btnMenu = Boton(this, "☰") { abrirMenu() }.apply { tamTexto = 26f }
+        fila(0.9f, estado to 1f)
+        fila(0.8f, btnAjustes to 2.2f, btnMenu to 1f)
         fila(1f, tabTeclado to 1f)
         fila(1f, tabAcordes to 1f)
         fila(1f, tabFaders to 1f)
         fila(1f,
-            Boton(this, "⏮\nINICIO") { transporte(0x44, CC_INICIO, "Inicio") }.apply { tamTexto = 20f } to 1f,
-            Boton(this, "▶\nPLAY") { transporte(0x02, CC_PLAY, "Play") }.apply { tamTexto = 20f; colorActivo = Estilo.VERDE } to 1f)
+            Boton(this, "⏮\nINICIO") { transporte(0x44, CC_INICIO, "Inicio") }.apply { tamTexto = 15f } to 1f,
+            Boton(this, "▶\nPLAY") { transporte(0x02, CC_PLAY, "Play") }.apply { tamTexto = 15f; colorActivo = Estilo.VERDE } to 1f)
         fila(1f,
-            Boton(this, "■\nSTOP") { transporte(0x01, CC_STOP, "Stop") }.apply { tamTexto = 20f } to 1f,
-            Boton(this, "●\nGRABAR") { transporte(0x06, CC_GRABAR, "Grabar") }.apply { tamTexto = 20f; colorActivo = Estilo.ROJO } to 1f)
-        btnPrograma = Boton(this, "") { elegirPrograma() }.apply { tamTexto = 20f; colorActivo = Estilo.AZUL }
+            Boton(this, "■\nSTOP") { transporte(0x01, CC_STOP, "Stop") }.apply { tamTexto = 15f } to 1f,
+            Boton(this, "●\nGRABAR") { transporte(0x06, CC_GRABAR, "Grabar") }.apply { tamTexto = 15f; colorActivo = Estilo.ROJO } to 1f)
+        btnPrograma = Boton(this, "") { elegirPrograma() }.apply { tamTexto = 16f; colorActivo = Estilo.AZUL }
         fila(1f,
-            Repetir(this, "◀") { moverPrograma(-1) }.apply { tamTexto = 26f } to 0.8f,
+            Repetir(this, "◀") { moverPrograma(-1) }.apply { tamTexto = 20f } to 0.7f,
             btnPrograma to 1.4f,
-            Repetir(this, "▶") { moverPrograma(1) }.apply { tamTexto = 26f } to 0.8f)
-        raiz.addView(columna, LinearLayout.LayoutParams(dp(190), ViewGroup.LayoutParams.MATCH_PARENT))
+            Repetir(this, "▶") { moverPrograma(1) }.apply { tamTexto = 20f } to 0.7f)
+        raiz.addView(columna, LinearLayout.LayoutParams(dp(112), ViewGroup.LayoutParams.MATCH_PARENT))
 
         contenido = FrameLayout(this)
         raiz.addView(contenido, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
@@ -152,7 +158,7 @@ class MainActivity : Activity(), MainActivityApi {
         menu.visibility = View.GONE
         marco.addView(menu, FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
         // AJUSTES: se desliza desde el borde izquierdo
-        ajustes = PanelAjustes(this, prefs, btnTonica, btnEscala, btnBloqueo, btnCanal, vel, hum, btnSonido) { cerrarAjustes() }
+        ajustes = PanelAjustes(this, prefs, btnTonica, btnEscala, btnBloqueo, btnCanal, vel, hum, grosor, btnSonido) { cerrarAjustes() }
         ajustes.visibility = View.GONE
         marco.addView(ajustes, FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
         // que el gesto "atras" de Android no se coma el deslizamiento desde los bordes
@@ -178,6 +184,7 @@ class MainActivity : Activity(), MainActivityApi {
         // posicion (antes se guardaba la nota de inicio; se convierte)
         teclado.primeraBlanca = if (prefs.contains("primeraBlanca")) prefs.getInt("primeraBlanca", 28)
                                 else prefs.getInt("notaBase", 48) / 12 * 7
+        teclado.teclasBlancas = teclasDeGrosor(prefs.getInt("grosor", GROSOR_DEFECTO))
         teclado.tonica = prefs.getInt("tonica", -1)
         teclado.escala = prefs.getInt("escala", prefs.getInt("modo", 0))
         teclado.bloqueo = prefs.getBoolean("bloqueo", false)
@@ -211,6 +218,16 @@ class MainActivity : Activity(), MainActivityApi {
         actualizarEscala()
         actualizarCCDedo()
         return pag
+    }
+
+    /** grosor 1..10 -> teclas blancas a la vista: 1 = 22 (finas) ... 10 = 7 (gruesas) */
+    private fun teclasDeGrosor(g: Int) = Math.round(22f - (g.coerceIn(1, 10) - 1) * 15f / 9f)
+
+    private fun aplicarGrosor(g: Int) {
+        teclado.teclasBlancas = teclasDeGrosor(g)
+        teclado.primeraBlanca = teclado.primeraBlanca   // reajusta si se sale del rango
+        prefs.edit().putInt("primeraBlanca", teclado.primeraBlanca).apply()
+        actualizarPosicion()
     }
 
     /** mover el teclado: 1 = una tecla blanca, 7 = una octava */
@@ -349,9 +366,25 @@ class MainActivity : Activity(), MainActivityApi {
         if (p != 2) pagAcordes.soltarTodo()
     }
 
+    // ------------------------------------------------------------ permiso de Bluetooth
+    private var pidioBt = false
+    private fun pedirPermisoBluetooth() {
+        val faltan = BleMidi.permisos().filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (faltan.isNotEmpty() && !pidioBt) { pidioBt = true; requestPermissions(faltan.toTypedArray(), 77) }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 77) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }) midi.reiniciarBluetooth()
+            else aviso("Sin permiso de Bluetooth: solo USB y Wi-Fi")
+        }
+    }
+
     // ------------------------------------------------------------ ciclo de vida
     override fun onResume() {
         super.onResume()
+        pedirPermisoBluetooth()
         pantallaCompleta()
         enPantalla = true
         midi.iniciar()
@@ -544,11 +577,23 @@ class Estado(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         pPunto.color = if (ok) Estilo.VERDE else Estilo.ROJO
-        c.drawCircle(22f, height / 2f, 11f, pPunto)
-        pTexto.textSize = 28f
-        var t = texto
-        while (t.length > 4 && pTexto.measureText(t) > width - 50f) t = t.dropLast(1)
-        if (t != texto) t = t.dropLast(1) + "…"
-        c.drawText(t, 44f, height / 2f - (pTexto.ascent() + pTexto.descent()) / 2f, pTexto)
+        c.drawCircle(16f, height / 2f, 9f, pPunto)
+        pTexto.textSize = 20f
+        // el texto se reparte en hasta 2 lineas (la columna es angosta)
+        val maxAncho = width - 40f
+        val lineas = ArrayList<String>()
+        var actual = ""
+        for (palabra in texto.split(" ")) {
+            val prueba = if (actual.isEmpty()) palabra else "$actual $palabra"
+            if (pTexto.measureText(prueba) <= maxAncho || actual.isEmpty()) actual = prueba
+            else { lineas.add(actual); actual = palabra }
+        }
+        if (actual.isNotEmpty()) lineas.add(actual)
+        var vis = lineas.take(2).toMutableList()
+        if (lineas.size > 2) vis[1] = vis[1] + "…"
+        vis = vis.map { l -> var t = l; while (t.length > 3 && pTexto.measureText(t) > maxAncho) t = t.dropLast(2) + "…"; t }.toMutableList()
+        val alto = 24f
+        var y = height / 2f - (vis.size - 1) * alto / 2f - (pTexto.ascent() + pTexto.descent()) / 2f
+        for (l in vis) { c.drawText(l, 34f, y, pTexto); y += alto }
     }
 }

@@ -16,7 +16,7 @@ class PanelAjustes(
     private val act: MainActivity,
     private val prefs: SharedPreferences,
     btnTonica: Boton, btnEscala: Boton, btnBloqueo: Boton,
-    btnCanal: Boton, vel: Valor, hum: Valor, btnModoSonido: Boton,
+    btnCanal: Boton, vel: Valor, hum: Valor, grosor: Valor, btnModoSonido: Boton,
     private val alCerrar: () -> Unit,
 ) : LinearLayout(act) {
 
@@ -48,6 +48,11 @@ class PanelAjustes(
         f3.addView(hum, LayoutParams(0, dp(48), 1.2f))
         cuerpo.addView(f3)
         cuerpo.addView(texto("VEL y HUMANIZE: arrastra hacia arriba/derecha para subir · doble toque = valor inicial", 12f, Estilo.TENUE, false).apply { setPadding(dp(4), dp(4), dp(4), dp(4)) })
+
+        cuerpo.addView(titulo("TECLADO"))
+        val fg = fila(); fg.addView(grosor, LayoutParams(0, dp(48), 1f))
+        cuerpo.addView(fg)
+        cuerpo.addView(texto("GROSOR TECLAS: sube = teclas más anchas (menos teclas a la vista) · baja = más teclas más finas", 12f, Estilo.TENUE, false).apply { setPadding(dp(4), dp(4), dp(4), dp(4)) })
 
         cuerpo.addView(titulo("SONIDO INTERNO"))
         val f4 = fila(); f4.addView(btnModoSonido, LayoutParams(0, dp(48), 1f))

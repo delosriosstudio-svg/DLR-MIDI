@@ -10,7 +10,7 @@ import android.os.Looper
 import java.io.IOException
 
 /**
- * Conexion MIDI por cable USB o por Wi-Fi.
+ * Conexion MIDI por cable USB, Bluetooth (BLE MIDI) o Wi-Fi. Prioridad: USB > Bluetooth > Wi-Fi.
  * - USB: con el telefono en modo USB "MIDI", el Mac lo ve como un teclado MIDI normal.
  * - Wi-Fi: "Red MIDI" de Apple (ver Wifi.kt). Se usa solo cuando no hay cable,
  *   para que REAPER no reciba cada nota dos veces.
@@ -33,17 +33,24 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
     @Volatile var sonar = false
 
     private val wifi = Wifi(context) { t, _ -> estadoWifi(t) }
+    private val ble = BleMidi(context) { t, _ -> estadoBle(t) }
+    private var ultimoBle: String? = null
+    private fun estadoBle(t: String?) { ultimoBle = if (ble.conectado) null else t; informar() }
+
+    /** pide que se (re)inicie el Bluetooth, por ejemplo despues de dar el permiso */
+    fun reiniciarBluetooth() { ble.detener(); ble.iniciar() }
     private var textoUsb = ""
 
-    val conectado: Boolean get() = port != null || wifi.conectado
+    val conectado: Boolean get() = port != null || ble.conectado || wifi.conectado
     private val porUsb: Boolean get() = port != null
 
     /** el estado que se muestra: el cable manda; si no hay cable, el Wi-Fi */
     private fun informar() {
         when {
             porUsb -> alCambiar("Conectado por USB", true)
+            ble.conectado -> alCambiar("Conectado por Bluetooth · " + ble.nombrePar, true)
             wifi.conectado -> alCambiar("Conectado por Wi-Fi · " + wifi.nombrePar, true)
-            else -> alCambiar(ultimoWifi ?: textoUsb, false)
+            else -> alCambiar(ultimoBle ?: ultimoWifi ?: textoUsb, false)
         }
     }
     private var ultimoWifi: String? = null
@@ -58,10 +65,11 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
     }
 
     fun iniciar() {
-        if (manager == null) { alCambiar("Este telefono no tiene MIDI", false); wifi.iniciar(); return }
+        if (manager == null) { alCambiar("Este telefono no tiene MIDI", false); wifi.iniciar(); ble.iniciar(); return }
         manager.registerDeviceCallback(callback, handler)
         buscar()
         wifi.iniciar()
+        ble.iniciar()
     }
 
     fun detener() {
@@ -69,6 +77,7 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
         panico()
         cerrar()
         wifi.detener()
+        ble.detener()
     }
 
     private fun cerrar() {
@@ -84,7 +93,7 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
         if (port != null || abriendo) return
         val usb = m.devices.firstOrNull { it.type == MidiDeviceInfo.TYPE_USB && it.inputPortCount > 0 }
         if (usb == null) {
-            textoUsb = "Sin conexion: cable USB > MIDI, o Red MIDI por Wi-Fi"
+            textoUsb = "Sin conexion: cable USB, Bluetooth o Wi-Fi"
             informar()
             return
         }
@@ -116,6 +125,7 @@ class Midi(context: Context, private val alCambiar: (texto: String, conectado: B
     private fun crudo(b: ByteArray, n: Int) {
         val p = port
         if (p != null) { try { p.send(b, 0, n) } catch (_: IOException) { } }
+        else if (ble.conectado) ble.enviar(b, n)
         else if (wifi.conectado) wifi.enviar(b, n)
     }
 

@@ -32,9 +32,18 @@ Usa la **Red MIDI de Apple** (RTP-MIDI), que el Mac ya trae. El teléfono y el M
 4. En REAPER: Preferences > Audio > MIDI Inputs > la sesión de red (ej. "Session 1") > **Enable input**.
 - Si el cable USB está conectado, se usa el cable (así REAPER no recibe cada nota dos veces).
 
+## Conectar por Bluetooth (recomendado si tu Wi-Fi es débil)
+Usa **Bluetooth MIDI (BLE)**, que el Mac ya trae. No necesita Wi-Fi ni cable.
+1. La primera vez, la app pide el permiso de Bluetooth (dispositivos cercanos): acepta.
+2. En el Mac abre **Configuración de Audio MIDI** > menú Ventana > **Mostrar Estudio MIDI** > icono **Bluetooth**.
+3. Aparece **DLR MIDI** (con la app abierta en el teléfono) > **Conectar**. El punto de la app se pone verde: "Conectado por Bluetooth".
+4. En REAPER: Preferences > Audio > MIDI Inputs > **DLR MIDI** > **Enable input**.
+- Prioridad si hay varias: cable USB > Bluetooth > Wi-Fi (así REAPER no recibe cada nota doble).
+- Si sales de la app o apagas la pantalla, el Bluetooth se desconecta; vuelve a tocar **Conectar** en el Mac.
+
 ## Pantalla (siempre horizontal)
 - **Columna izquierda fija**: modos **TECLADO · ACORDES · FADERS**, transporte (**INICIO · PLAY · STOP · GRABAR**) y **PRESET** ◀ ▶ (Program Change).
-- **Panel AJUSTES** (botón ⚙ AJUSTES o deslizar desde el borde izquierdo): tonalidad, escala, bloqueo de escala, canal MIDI, VEL, HUMANIZE y sonido interno (modo, instrumento, volumen, reverb).
+- **Panel AJUSTES** (botón ⚙ AJUSTES o deslizar desde el borde izquierdo): tonalidad, escala, bloqueo de escala, canal MIDI, VEL, HUMANIZE y **grosor de las teclas** (qué tan anchas se ven) y sonido interno (modo, instrumento, volumen, reverb).
 - **Panel derecho** (☰ o deslizar desde el borde derecho): opciones de ACORDES y TEMPLATES.
 
 ## Transporte y Program Change (columna izquierda)
